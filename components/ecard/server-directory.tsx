@@ -44,7 +44,7 @@ export function ServerDirectory({ servers, onJoin }: ServerDirectoryProps) {
             {open.map((s) => (
               <tr key={s?.id} className="border-t border-border/60 text-foreground/90">
                 <td className="py-2 pr-2">
-                  <span className="font-semibold text-foreground">{s?.hostName ?? 'Ẩn Danh'}</span>
+                  <span className="font-semibold text-foreground">{s?.hostName ?? 'Kẻ Vô Danh'}</span>
                   <span className="ml-1 font-display text-[10px] tracking-widest text-muted-foreground">{s?.id}</span>
                 </td>
                 <td className="py-2 pr-2">
@@ -57,9 +57,14 @@ export function ServerDirectory({ servers, onJoin }: ServerDirectoryProps) {
                   <button
                     type="button"
                     onClick={() => onJoin(s?.id)}
-                    className="rounded border border-gold/60 bg-gold/10 px-3 py-1 font-sans text-xs font-semibold uppercase tracking-wider text-gold transition-colors hover:bg-gold/20"
+                    disabled={s.bot}
+                    className={`rounded border px-3 py-1 font-sans text-xs font-semibold uppercase tracking-wider transition-colors ${
+                      s.bot 
+                        ? 'bg-zinc-800 text-zinc-600 border-zinc-700 cursor-not-allowed' 
+                        : 'border-gold/60 bg-gold/10 text-gold hover:bg-gold/20'
+                    }`}
                   >
-                    Vào Ngay / Join
+                    {s.bot ? 'LOCKED' : 'Vào Ngay / Join'}
                   </button>
                 </td>
               </tr>
