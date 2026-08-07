@@ -16,8 +16,26 @@ const http = require('http')
 
 const PORT = process.env.PORT || 8080
 
+// Where the actual game UI lives (the Next.js app on Vercel). This relay
+// server has no UI of its own — it only exists to broadcast realtime
+// messages — but we redirect a friendly path here so you can hand out
+// ONE link and it still lands people on the playable game.
+// Override via the GAME_URL env var if you ever move the frontend.
+const GAME_URL = process.env.GAME_URL || 'https://mygame-mash16.vercel.app'
+
 // Plain HTTP server so hosts like Render can health-check with a normal GET.
+// IMPORTANT: the root path "/" must keep returning a plain 200 response —
+// Render's health check hits "/" and expects 200, not a redirect. That's
+// why the redirect lives on a separate path ("/play") instead of "/".
 const httpServer = http.createServer((req, res) => {
+  const url = req.url || '/'
+
+  if (url === '/play' || url === '/game' || url === '/join') {
+    res.writeHead(302, { Location: GAME_URL })
+    res.end()
+    return
+  }
+
   res.writeHead(200, { 'Content-Type': 'text/plain' })
   res.end('Kaiji global hub is running.\n')
 })
