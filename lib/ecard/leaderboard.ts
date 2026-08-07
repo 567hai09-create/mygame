@@ -3,11 +3,13 @@
 // ======================================================================
 
 export interface DamnedRecord {
+  fingerprint?: string
   name: string
   debt: number // total debt accrued (Coin — virtual in-game currency only)
   wins: number // match/round wins
   deaths: number // Số Lần Chết — total executions survived
   isBot?: boolean
+  role?: 'none' | 'escaped' | 'admin'
 }
 
 const KEY = 'ecard.hall-of-the-damned.v1'
@@ -22,6 +24,7 @@ const SEED: DamnedRecord[] = [
 ]
 
 function sortDamned(rows: DamnedRecord[]): DamnedRecord[] {
+  // Separate escaped players from the common list as per user request
   return [...rows].sort((a, b) => (b?.deaths ?? 0) - (a?.deaths ?? 0) || (b?.debt ?? 0) - (a?.debt ?? 0))
 }
 
@@ -53,24 +56,35 @@ export function saveLeaderboard(rows: DamnedRecord[]) {
   }
 }
 
-/** Record an execution/defeat for a named player, creating the row if needed. */
+/** Record an execution/defeat for a player, using fingerprint as unique ID. */
 export function recordDeath(
   name: string,
-  opts: { debt?: number; wins?: number } = {},
+  opts: { debt?: number; wins?: number; fingerprint?: string; role?: 'none' | 'escaped' | 'admin' } = {},
 ): DamnedRecord[] {
   const rows = loadLeaderboard()
-  const clean = (name ?? 'Kẻ Vô Danh').trim() || 'Kẻ Vô Danh'
-  const existing = rows.find((r) => r?.name === clean && !r?.isBot)
+  const cleanName = (name ?? 'Kẻ Vô Danh').trim() || 'Kẻ Vô Danh'
+  const fp = opts.fingerprint
+  
+  // Try to find by fingerprint first, then fallback to name for bots or old records
+  const existing = fp 
+    ? rows.find((r) => r?.fingerprint === fp && !r?.isBot)
+    : rows.find((r) => r?.name === cleanName && !r?.isBot)
+
   if (existing) {
     existing.deaths = (existing.deaths ?? 0) + 1
     existing.debt = (existing.debt ?? 0) + (opts.debt ?? 0)
     existing.wins = (existing.wins ?? 0) + (opts.wins ?? 0)
+    if (opts.role) existing.role = opts.role
+    if (fp) existing.fingerprint = fp
+    existing.name = cleanName
   } else {
     rows.push({
-      name: clean,
+      fingerprint: fp,
+      name: cleanName,
       debt: opts.debt ?? 0,
       wins: opts.wins ?? 0,
       deaths: 1,
+      role: opts.role ?? 'none'
     })
   }
   const sorted = sortDamned(rows)
@@ -81,16 +95,31 @@ export function recordDeath(
 /** Add wins / debt without a death (e.g. surviving the gauntlet). */
 export function recordProgress(
   name: string,
-  opts: { debt?: number; wins?: number } = {},
+  opts: { debt?: number; wins?: number; fingerprint?: string; role?: 'none' | 'escaped' | 'admin' } = {},
 ): DamnedRecord[] {
   const rows = loadLeaderboard()
-  const clean = (name ?? 'Kẻ Vô Danh').trim() || 'Kẻ Vô Danh'
-  const existing = rows.find((r) => r?.name === clean && !r?.isBot)
+  const cleanName = (name ?? 'Kẻ Vô Danh').trim() || 'Kẻ Vô Danh'
+  const fp = opts.fingerprint
+
+  const existing = fp 
+    ? rows.find((r) => r?.fingerprint === fp && !r?.isBot)
+    : rows.find((r) => r?.name === cleanName && !r?.isBot)
+
   if (existing) {
     existing.debt = (existing.debt ?? 0) + (opts.debt ?? 0)
     existing.wins = (existing.wins ?? 0) + (opts.wins ?? 0)
+    if (opts.role) existing.role = opts.role
+    if (fp) existing.fingerprint = fp
+    existing.name = cleanName
   } else {
-    rows.push({ name: clean, debt: opts.debt ?? 0, wins: opts.wins ?? 0, deaths: 0 })
+    rows.push({ 
+      fingerprint: fp,
+      name: cleanName, 
+      debt: opts.debt ?? 0, 
+      wins: opts.wins ?? 0, 
+      deaths: 0,
+      role: opts.role ?? 'none'
+    })
   }
   const sorted = sortDamned(rows)
   saveLeaderboard(sorted)
