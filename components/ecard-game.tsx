@@ -170,6 +170,10 @@ class WebSocketNetworkEngine {
     this.clientId = `client-${Math.random().toString(36).slice(2, 9)}`
   }
 
+  getClientId() {
+    return this.clientId
+  }
+
   connect(): Promise<void> {
     return new Promise((resolve, reject) => {
       if (typeof window === 'undefined') {
@@ -354,8 +358,28 @@ export function EcardGame() {
     wins: 0,
     forfeits: 0,
     customNameUnlocked: false,
+    role: 'none',
   }))
   const [servers, setServers] = useState<ActiveServer[]>([])
+  const [fingerprint, setFingerprint] = useState<string>('')
+
+  useEffect(() => {
+    generateHardwareFingerprint().then((fp) => {
+      setFingerprint(fp.hash)
+    })
+  }, [])
+
+  const getDisplayName = useCallback((prof: PlayerProfile) => {
+    if (prof.role === 'admin') return 'Kẻ Vô Danh'
+    if (prof.role === 'escaped') return prof.playerName
+    if (prof.playerName !== 'Kẻ Vô Danh' && prof.playerName !== 'Kẻ Vô Danh / Anonymous') return prof.playerName
+    
+    // Anonymous number based on fingerprint
+    const num = fingerprint ? parseInt(fingerprint.slice(-3), 16) % 1000 : '?'
+    return `Kẻ Vô Danh #${num}`
+  }, [fingerprint])
+
+  const displayName = useMemo(() => getDisplayName(profile), [profile, getDisplayName])
   const [verdict, setVerdict] = useState<'despair' | 'survived' | null>(null)
 
   // ---- cloud sync (Firebase Auth + Firestore) ----
@@ -546,17 +570,40 @@ export function EcardGame() {
       if (!trimmed) return
       setGlobalChatMessages((prev) => [
         ...prev.slice(-50),
-        { id: nextId('gc'), name: name || 'Kẻ Vô Danh', text: trimmed, color: '#b3914a', timestamp: Date.now(), self: true },
+        { 
+          id: nextId('gc'), 
+          name: displayName, 
+          text: trimmed, 
+          color: profile.role === 'admin' ? '#ef4444' : profile.role === 'escaped' ? '#10b981' : '#b3914a', 
+          timestamp: Date.now(), 
+          self: true,
+          clientId: wsRef.current?.getClientId() || ''
+        },
       ])
       wsRef.current?.emit('GLOBAL_CHAT_MESSAGE', {
-        playerName: name || 'Kẻ Vô Danh',
+        playerName: displayName,
         text: trimmed,
-        color: '#b3914a',
+        color: profile.role === 'admin' ? '#ef4444' : profile.role === 'escaped' ? '#10b981' : '#b3914a',
+        role: profile.role,
         fingerprint,
       })
     },
-    [name, fingerprint],
+    [displayName, profile.role, fingerprint],
   )
+
+  const onMutePlayer = useCallback((clientId: string) => {
+    if (profile.role !== 'admin') return
+    window.localStorage.setItem(`muted-${clientId}`, 'true')
+    setMessages((prev) => [
+      ...prev,
+      { id: nextId('sys'), sender: 'system', text: 'Đã khóa chat người chơi này.' }
+    ])
+  }, [profile.role])
+
+  const onInvitePlayer = useCallback((targetName: string) => {
+    if (profile.role !== 'admin') return
+    onWorldChatSend(`[INVITE] Mời ${targetName} tham gia bàn cược của tôi!`)
+  }, [profile.role, onWorldChatSend])
 
   // ---- REAL PVP room chat (your own line +, in PVP, relayed to the opponent) ----
   const sendRoomChat = useCallback(
@@ -582,13 +629,23 @@ export function EcardGame() {
     wsRef.current.connect().then(() => {
       setWsConnected(true)
 
+      // Sync existing rooms from server
+      wsRef.current?.on('SYNC_ROOMS', (data) => {
+        if (data.rooms && Array.isArray(data.rooms)) {
+          setServers(data.rooms)
+        }
+      })
+
       // Listen for global chat messages
       wsRef.current?.on('GLOBAL_CHAT_MESSAGE', (data) => {
+        // Check if player is muted locally
+        if (window.localStorage.getItem(`muted-${data.clientId}`)) return
+
         setGlobalChatMessages((prev) => [
           ...prev.slice(-50),
           {
             id: nextId('gc'),
-            name: data.playerName ?? 'Ẩn Danh',
+            name: data.playerName ?? 'Kẻ Vô Danh',
             text: data.text,
             color: data.color ?? '#7dd3fc',
             timestamp: data.timestamp,
@@ -934,7 +991,7 @@ export function EcardGame() {
     audio.explosion()
     setIsLifeWagerActive(true)
     setWagerLocked(true)
-    const totalAssets = Math.max(currentDebt * 2, 1_000_000_000)
+    const totalAssets = 10_000_000
     setRoundWager(totalAssets)
     addMessage('system', 'ULTIMATE LIFE-WAGER KÍCH HOẠT: THẮNG LÀM VUA, THUA LÀM MA!')
 
@@ -987,7 +1044,7 @@ export function EcardGame() {
     later(() => setShake(false), 600)
     later(() => setMonochrome(true), 900)
 
-    const updated = recordDeath(name, { debt: currentDebt + LOSS_DEBT, wins: playerWins })
+    const updated = recordDeath(displayName, { debt: currentDebt + LOSS_DEBT, wins: playerWins, fingerprint, role: profile.role })
     setLeaderboard(updated)
     setProfile(recordMatchOutcome({ wins: playerWins }))
     if (hostedRoomRef.current) {
@@ -1012,7 +1069,7 @@ export function EcardGame() {
     audio.win()
     audio.breathingBurst(0.7, 5)
     const winnings = (playerWins * 40_000_000 + START_HP * 1_000_000) * (balance?.rewardMultiplier ?? 1)
-    const updated = recordProgress(name, { wins: playerWins + 1, debt: 0 })
+    const updated = recordProgress(displayName, { wins: playerWins + 1, debt: 0, fingerprint, role: profile.role })
     setLeaderboard(updated)
     setProfile(recordMatchOutcome({ wins: playerWins + 1, winnings }))
     if (hostedRoomRef.current) {
@@ -1175,9 +1232,22 @@ export function EcardGame() {
     resolveReveal(false)
   }, [selectedIndex, phase, executing, pvpAwaitingOpponent, resolveReveal])
 
+  // ---- PVP WAITING TIMEOUT ----
+  useEffect(() => {
+    if (!mounted || screen !== 'game' || !pvpAwaitingOpponent) return
+    
+    // Auto-exit if waiting for opponent pick for more than 45 seconds
+    const timeoutId = window.setTimeout(() => {
+      addMessage('system', 'Đối thủ quá lâu không phản hồi. Tự động thoát bàn.')
+      surrender()
+    }, 45000)
+    
+    return () => window.clearTimeout(timeoutId)
+  }, [mounted, screen, pvpAwaitingOpponent, surrender])
+
   // ---- TIMER EFFECT ----
   useEffect(() => {
-    if (!mounted || screen !== 'game' || phase !== 'select' || executing) return
+    if (!mounted || screen !== 'game' || phase !== 'select' || executing || pvpAwaitingOpponent) return
     const id = window.setInterval(() => {
       setTimeLeft((t) => {
         if (t <= 1) {
@@ -1222,30 +1292,36 @@ export function EcardGame() {
   const surrender = useCallback(() => {
     audio.click()
     clearTimers()
+    
+    // SAFE EXIT: If the match hasn't really started or we are just waiting for opponent to join/pick,
+    // we can exit without the 5-min dungeon lock penalty.
+    const isSafeExit = pvpAwaitingOpponent || (mode === 'PVP' && round === 1 && phase === 'select' && playerHP === START_HP)
+
     if (mode === 'PVP' && roomCode) {
-      // Tell the opponent (and everyone else) this table is dead right now,
-      // whether we were the host or the guest.
-      wsRef.current?.emit('ROOM_DESTROYED', { roomCode, hostName: name })
+      wsRef.current?.emit('ROOM_DESTROYED', { roomCode, hostName: displayName })
     }
     if (hostedRoomRef.current) {
       unregisterServerRoom(hostedRoomRef.current)
       setServers(unregisterServerRoom(hostedRoomRef.current))
       hostedRoomRef.current = undefined
     }
-    if (mode === 'AI') {
-      audio.stopHeart()
+
+    if (mode === 'AI' || isSafeExit) {
+      audio.stopHeart?.()
       setScreen('lobby')
+      if (isSafeExit) addMessage('system', 'Đã thoát phòng an toàn.')
       return
     }
-    const until = Date.now() + 120_000
+
+    const until = Date.now() + 60_000 * 5 // 5 min dungeon lock
     saveDungeonLock(until)
     setDungeonLocked(true)
     setSplit(true)
     audio.explosion()
-    const updated = recordDeath(name, { debt: currentDebt + LOSS_DEBT })
+    const updated = recordDeath(displayName, { debt: currentDebt + LOSS_DEBT, fingerprint, role: profile.role })
     setLeaderboard(updated)
     setProfile(recordMatchOutcome({ forfeit: true }))
-  }, [mode, roomCode, clearTimers, name, currentDebt])
+  }, [mode, roomCode, clearTimers, displayName, currentDebt, pvpAwaitingOpponent, round, phase, playerHP])
 
   const onQuickTaunt = useCallback(
     (text: string) => {
@@ -1288,21 +1364,24 @@ export function EcardGame() {
   if (screen === 'lobby') {
     return (
       <>
-        <Lobby
-          leaderboard={leaderboard ?? []}
-          profile={profile}
-          servers={servers ?? []}
-          onStart={startMatch}
-          onProfileNameChange={onProfileNameChange}
-          onSaveProfile={onSaveProfile}
-          onReplayIntro={() => setScreen('intro')}
-          worldChatMessages={globalChatMessages ?? []}
-          onWorldChatSend={onWorldChatSend}
-          wsConnected={wsConnected}
-          pvpWaiting={pvpWaiting}
-          waitingRoomCode={hostedRoomRef.current}
-          onCancelPvpWaiting={cancelPvpWaiting}
-        />
+          <Lobby
+            leaderboard={leaderboard}
+            profile={profile}
+            servers={servers}
+            onStart={onStart}
+            onProfileNameChange={(playerName) => setProfile((p) => ({ ...p, playerName }))}
+            onSaveProfile={(patch) => setProfile(patchProfile(patch))}
+            onReplayIntro={() => setScreen('intro')}
+            worldChatMessages={globalChatMessages}
+            onWorldChatSend={onWorldChatSend}
+            wsConnected={wsConnected}
+            isAdmin={profile.role === 'admin'}
+            onMutePlayer={onMutePlayer}
+            onInvitePlayer={onInvitePlayer}
+            pvpWaiting={pvpWaiting}
+            waitingRoomCode={roomCode}
+            onCancelPvpWaiting={onCancelPvpWaiting}
+          />
         {dungeonLocked && <DungeonLock secondsLeft={dungeonSeconds} />}
         {!wsConnected && (
           <div className="fixed bottom-4 left-4 bg-yellow-900/80 border border-yellow-600 px-4 py-2 rounded text-yellow-200 text-xs uppercase font-bold">
