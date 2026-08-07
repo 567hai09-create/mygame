@@ -1379,7 +1379,7 @@ export function EcardGame() {
             onInvitePlayer={onInvitePlayer}
             pvpWaiting={pvpWaiting}
             waitingRoomCode={roomCode}
-            onCancelPvpWaiting={onCancelPvpWaiting}
+            onCancelPvpWaiting={cancelPvpWaiting}
           />
         {dungeonLocked && <DungeonLock secondsLeft={dungeonSeconds} />}
         {!wsConnected && (
