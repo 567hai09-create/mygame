@@ -38,6 +38,9 @@ interface LobbyProps {
   worldChatMessages: GlobalChatMessage[]
   onWorldChatSend: (text: string) => void
   wsConnected?: boolean
+  isAdmin?: boolean
+  onMutePlayer?: (clientId: string) => void
+  onInvitePlayer?: (playerName: string) => void
   /** True while WE are hosting a real PVP table and genuinely waiting for a
    * real opponent to walk in (no bot ever fills this seat). */
   pvpWaiting?: boolean
@@ -58,6 +61,9 @@ export function Lobby({
   worldChatMessages,
   onWorldChatSend,
   wsConnected,
+  isAdmin,
+  onMutePlayer,
+  onInvitePlayer,
   pvpWaiting,
   waitingRoomCode,
   onCancelPvpWaiting,
@@ -75,10 +81,22 @@ export function Lobby({
   // Filter public matches for the dashboard
   const publicMatches = useMemo(() => servers.filter(s => !s.isPrivate && s.status === 'WAITING'), [servers])
 
+  // Filtered leaderboard: exclude escaped players from the common hall
+  const commonLeaderboard = useMemo(() => leaderboard.filter(r => r.isBot || r.role === 'none'), [leaderboard])
+  const escapedLeaderboard = useMemo(() => leaderboard.filter(r => r.role === 'escaped' || r.role === 'admin'), [leaderboard])
+
   // Shared arena state — undefined = empty/closed, WAITING = one player
   // seated and waiting, INGAME = full and locked.
   const arenaServer = useMemo(() => servers.find((s) => s.id === ARENA_ROOM_ID), [servers])
   const arenaIsMine = arenaServer?.hostName === cleanName
+
+  const [showRoleSelection, setShowRoleSelection] = useState(false)
+
+  useEffect(() => {
+    if (profile.totalAccumulatedWinnings >= 10_000_000_000 && profile.role === 'none') {
+      setShowRoleSelection(true)
+    }
+  }, [profile.totalAccumulatedWinnings, profile.role])
 
   function begin(mode: GameMode, opts: Partial<StartOpts> = {}) {
     audio.ensure?.()
@@ -320,7 +338,15 @@ export function Lobby({
           <section className="flex flex-col space-y-6">
             <div className="flex flex-col">
               <h2 className="font-display text-sm uppercase tracking-widest text-zinc-500 mb-2 px-1">Kênh Liên Lạc / Communication</h2>
-              <GlobalChat playerName={cleanName} messages={worldChatMessages} onSend={onWorldChatSend} connected={wsConnected} />
+              <GlobalChat 
+                playerName={cleanName} 
+                messages={worldChatMessages} 
+                onSend={onWorldChatSend} 
+                connected={wsConnected} 
+                isAdmin={isAdmin}
+                onMutePlayer={onMutePlayer}
+                onInvitePlayer={onInvitePlayer}
+              />
             </div>
 
             {/* BÀN CƯỢC ĐANG TRỐNG / AVAILABLE MATCHES */}
@@ -351,9 +377,14 @@ export function Lobby({
                             <td className="p-3 text-right">
                               <button 
                                 onClick={() => begin('PVP', { roomCode: s.id, host: false })}
-                                className="bg-[#9e2a2b]/20 border border-[#9e2a2b]/40 text-[#9e2a2b] px-3 py-1 text-[9px] uppercase font-black hover:bg-[#9e2a2b] hover:text-white transition-all rounded-sm"
+                                disabled={s.bot}
+                                className={`px-3 py-1 text-[9px] uppercase font-black transition-all rounded-sm ${
+                                  s.bot 
+                                    ? 'bg-zinc-800 text-zinc-600 border border-zinc-700 cursor-not-allowed' 
+                                    : 'bg-[#9e2a2b]/20 border border-[#9e2a2b]/40 text-[#9e2a2b] hover:bg-[#9e2a2b] hover:text-white'
+                                }`}
                               >
-                                VÀO NGAY / JOIN
+                                {s.bot ? 'BÀN BOT / LOCKED' : 'VÀO NGAY / JOIN'}
                               </button>
                             </td>
                           </tr>
@@ -410,8 +441,8 @@ export function Lobby({
                   </tr>
                 </thead>
                 <tbody>
-                  {leaderboard.length > 0 ? (
-                    leaderboard.slice(0, 20).map((row, i) => {
+                  {commonLeaderboard.length > 0 ? (
+                    commonLeaderboard.slice(0, 20).map((row, i) => {
                       const isMe = !row.isBot && row.name === cleanName
                       return (
                         <tr
@@ -446,7 +477,41 @@ export function Lobby({
           </div>
         </section>
 
-        {/* Footer Note */}
+        {escapedLeaderboard.length > 0 && (
+          <section className="flex flex-col">
+            <h2 className="font-display text-sm uppercase tracking-widest text-emerald-500 mb-2 px-1">
+              Hội Những Kẻ Thoát Hiểm / The Escaped Ones
+            </h2>
+            <div
+              className="bg-[#0a0a0d] border border-emerald-900/30 rounded overflow-hidden shadow-[0_0_20px_rgba(16,185,129,0.1)]"
+            >
+              <div className="max-h-[200px] overflow-y-auto thin-scroll">
+                <table className="w-full text-left border-collapse">
+                  <thead className="sticky top-0 bg-[#0c120e] border-b border-emerald-900/30">
+                    <tr className="text-[9px] uppercase tracking-widest text-emerald-500/70">
+                      <th className="p-3 w-10">#</th>
+                      <th className="p-3">Tên / Name</th>
+                      <th className="p-3 text-right">Vai Trò / Role</th>
+                      <th className="p-3 text-right">Thắng / Wins</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {escapedLeaderboard.map((row, i) => (
+                      <tr key={`${row.name}-${i}`} className="border-b border-zinc-900/50 hover:bg-emerald-900/5 transition-colors">
+                        <td className="p-3 text-xs font-mono text-emerald-600">{i + 1}</td>
+                        <td className="p-3 text-xs font-bold text-emerald-400">{row.name}</td>
+                        <td className="p-3 text-[9px] text-right uppercase tracking-tighter text-zinc-500">
+                          {row.role === 'admin' ? 'Quản Trị' : 'Đã Thoát'}
+                        </td>
+                        <td className="p-3 text-xs text-right text-emerald-400 font-mono">{row.wins ?? 0}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </section>
+        )}
         <footer className="text-center opacity-30 hover:opacity-100 transition-opacity duration-700">
           <p className="font-sans text-[10px] uppercase tracking-[0.3em] text-zinc-500">
             The Citizen governs the Slave. Yet a single Slave can topple the Emperor.
@@ -477,6 +542,43 @@ export function Lobby({
             >
               Hủy / Cancel
             </button>
+          </div>
+        </div>
+      )}
+
+      {showRoleSelection && (
+        <div className="fixed inset-0 z-[10001] flex items-center justify-center bg-black/95 backdrop-blur-md p-4">
+          <div className="w-full max-w-2xl rounded-lg border border-gold/50 bg-[#0a0a0d] p-8 text-center shadow-[0_0_50px_rgba(179,145,74,0.3)]">
+            <h2 className="font-display text-3xl font-black tracking-[0.2em] text-gold mb-2">THOÁT KHỎI NGỤC TỐI</h2>
+            <p className="text-sm text-zinc-400 mb-8 uppercase tracking-widest">Bạn đã đạt đủ 10 Tỷ Coin. Hãy chọn định mệnh của mình.</p>
+            
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <button
+                onClick={() => {
+                  onSaveProfile({ role: 'escaped' })
+                  setShowRoleSelection(false)
+                }}
+                className="group p-6 border border-emerald-900/50 bg-emerald-900/10 hover:bg-emerald-900/20 transition-all rounded text-left"
+              >
+                <span className="block font-display text-xl font-bold text-emerald-400 mb-2">KẺ THOÁT HIỂM</span>
+                <span className="block text-xs text-zinc-400 leading-relaxed">
+                  Tự do đặt tên, không bị buộc phải chấp nhận các kỳ thi nguy hiểm. Bạn đã vượt qua tất cả.
+                </span>
+              </button>
+
+              <button
+                onClick={() => {
+                  onSaveProfile({ role: 'admin' })
+                  setShowRoleSelection(false)
+                }}
+                className="group p-6 border border-red-900/50 bg-red-900/10 hover:bg-red-900/20 transition-all rounded text-left"
+              >
+                <span className="block font-display text-xl font-bold text-red-500 mb-2">QUẢN TRỊ VIÊN</span>
+                <span className="block text-xs text-zinc-400 leading-relaxed">
+                  Trở thành người của "Bên Ác". Có quyền khóa chat, ẩn danh tính hoàn toàn và mời người chơi khác.
+                </span>
+              </button>
+            </div>
           </div>
         </div>
       )}
