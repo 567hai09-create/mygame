@@ -346,7 +346,6 @@ export function EcardGame() {
   const [muted, setMuted] = useState(false)
 
   // ---- hardware defense ----
-  const [fingerprint, setFingerprint] = useState<string>('')
   const [cheatDetected, setCheatDetected] = useState(false)
 
   // ---- persistent identity ----
