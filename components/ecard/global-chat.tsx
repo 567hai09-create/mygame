@@ -10,6 +10,9 @@ interface GlobalChatProps {
   messages: GlobalChatMessage[]
   onSend: (text: string) => void
   connected?: boolean
+  isAdmin?: boolean
+  onMutePlayer?: (clientId: string) => void
+  onInvitePlayer?: (playerName: string) => void
 }
 
 const MAX_LEN = 60
@@ -20,7 +23,15 @@ const COOLDOWN_MS = 3000
  * Styled as an industrial dark steel terminal box. Fully controlled —
  * messages come from the real WebSocket-synced feed, not local mock bots.
  */
-export function GlobalChat({ playerName, messages, onSend, connected }: GlobalChatProps) {
+export function GlobalChat({ 
+  playerName, 
+  messages, 
+  onSend, 
+  connected, 
+  isAdmin, 
+  onMutePlayer, 
+  onInvitePlayer 
+}: GlobalChatProps) {
   const [draft, setDraft] = useState('')
   const [warning, setWarning] = useState(false)
   const lastMessageTimestamp = useRef(0)
@@ -76,12 +87,22 @@ export function GlobalChat({ playerName, messages, onSend, connected }: GlobalCh
           <p className="mt-4 text-center font-sans text-xs text-zinc-600 italic">Chưa có ai lên tiếng...</p>
         )}
         {messages.map((m) => (
-          <p key={m.id} className="leading-snug border-l-2 border-transparent hover:border-zinc-700 pl-1 transition-colors">
-            <span className="font-bold" style={{ color: m.color }}>
-              {m?.name ?? 'Ẩn Danh'}:
-            </span>{' '}
-            <span className="text-zinc-300">{m?.text}</span>
-          </p>
+          <div key={m.id} className="group leading-snug border-l-2 border-transparent hover:border-zinc-700 pl-1 transition-colors flex items-center justify-between">
+            <div>
+              <span className="font-bold cursor-pointer hover:underline" style={{ color: m.color }} onClick={() => onInvitePlayer?.(m.name)}>
+                {m?.name ?? 'Kẻ Vô Danh'}:
+              </span>{' '}
+              <span className="text-zinc-300">{m?.text}</span>
+            </div>
+            {isAdmin && !m.self && (
+              <button 
+                onClick={() => onMutePlayer?.(m.clientId)}
+                className="opacity-0 group-hover:opacity-100 text-[8px] bg-red-900/40 text-red-400 px-1 rounded border border-red-800 hover:bg-red-900 transition-all"
+              >
+                MUTE
+              </button>
+            )}
+          </div>
         ))}
       </div>
 
