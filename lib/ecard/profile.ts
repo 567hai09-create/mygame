@@ -6,8 +6,13 @@
 
 export const PROFILE_KEY = 'KAIJI_PLAYER_PROFILE'
 
-export const DEFAULT_NAME = 'Kẻ Vô Danh / Anonymous'
+export const DEFAULT_NAME = 'Kẻ Vô Danh'
 export const DEFAULT_TITLE_ID = 'rookie'
+
+// Threshold for special roles
+export const SPECIAL_ROLE_THRESHOLD = 10_000_000_000 // 10B Coin
+
+export type PlayerRole = 'none' | 'escaped' | 'admin'
 
 export interface PlayerProfile {
   playerName: string
@@ -17,6 +22,7 @@ export interface PlayerProfile {
   wins: number // lifetime match/round wins
   forfeits: number // lifetime dungeon-lock forfeits
   customNameUnlocked: boolean
+  role: PlayerRole
 }
 
 export interface PrestigeTitle {
@@ -89,7 +95,11 @@ export function isTitleUnlocked(title: PrestigeTitle, profile: PlayerProfile): b
 }
 
 export function canUnlockCustomName(profile: PlayerProfile): boolean {
-  return (profile?.totalAccumulatedWinnings ?? 0) >= CUSTOM_NAME_COST
+  return (profile?.totalAccumulatedWinnings ?? 0) >= CUSTOM_NAME_COST || profile.role === 'escaped'
+}
+
+export function canUnlockSpecialRole(profile: PlayerProfile): boolean {
+  return (profile?.totalAccumulatedWinnings ?? 0) >= SPECIAL_ROLE_THRESHOLD
 }
 
 function coerce(raw: Partial<PlayerProfile> | null | undefined): PlayerProfile {
@@ -101,6 +111,7 @@ function coerce(raw: Partial<PlayerProfile> | null | undefined): PlayerProfile {
     wins: Math.max(0, raw?.wins ?? 0),
     forfeits: Math.max(0, raw?.forfeits ?? 0),
     customNameUnlocked: Boolean(raw?.customNameUnlocked),
+    role: raw?.role ?? 'none',
   }
   // Resolve the label from the id, and guard against a title the player no
   // longer qualifies for (e.g. a forfeit revoked Death Defier).
