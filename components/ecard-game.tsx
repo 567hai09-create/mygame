@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react' 
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   type Card,
   type Faction,
@@ -1242,7 +1242,7 @@ export function EcardGame() {
     }, 45000)
     
     return () => window.clearTimeout(timeoutId)
-  }, [mounted, screen, pvpAwaitingOpponent])
+  }, [mounted, screen, pvpAwaitingOpponent, surrender])
 
   // ---- TIMER EFFECT ----
   useEffect(() => {
