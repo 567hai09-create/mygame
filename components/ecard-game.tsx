@@ -1231,19 +1231,6 @@ export function EcardGame() {
     resolveReveal(false)
   }, [selectedIndex, phase, executing, pvpAwaitingOpponent, resolveReveal])
 
-  // ---- PVP WAITING TIMEOUT ----
-  useEffect(() => {
-    if (!mounted || screen !== 'game' || !pvpAwaitingOpponent) return
-    
-    // Auto-exit if waiting for opponent pick for more than 45 seconds
-    const timeoutId = window.setTimeout(() => {
-      addMessage('system', 'Đối thủ quá lâu không phản hồi. Tự động thoát bàn.')
-      surrender()
-    }, 45000)
-    
-    return () => window.clearTimeout(timeoutId)
-  }, [mounted, screen, pvpAwaitingOpponent, surrender])
-
   // ---- TIMER EFFECT ----
   useEffect(() => {
     if (!mounted || screen !== 'game' || phase !== 'select' || executing || pvpAwaitingOpponent) return
@@ -1321,6 +1308,19 @@ export function EcardGame() {
     setLeaderboard(updated)
     setProfile(recordMatchOutcome({ forfeit: true }))
   }, [mode, roomCode, clearTimers, displayName, currentDebt, pvpAwaitingOpponent, round, phase, playerHP])
+
+  // ---- PVP WAITING TIMEOUT ----
+  useEffect(() => {
+    if (!mounted || screen !== 'game' || !pvpAwaitingOpponent) return
+
+    // Auto-exit if waiting for opponent pick for more than 45 seconds
+    const timeoutId = window.setTimeout(() => {
+      addMessage('system', 'Đối thủ quá lâu không phản hồi. Tự động thoát bàn.')
+      surrender()
+    }, 45000)
+
+    return () => window.clearTimeout(timeoutId)
+  }, [mounted, screen, pvpAwaitingOpponent, surrender])
 
   const onQuickTaunt = useCallback(
     (text: string) => {
