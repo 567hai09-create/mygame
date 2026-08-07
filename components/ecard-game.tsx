@@ -50,6 +50,7 @@ import { DungeonLock } from '@/components/ecard/dungeon-lock'
 import { IntroStory, hasSeenIntro } from '@/components/ecard/intro-story'
 import { useAuth } from '@/lib/firebase/auth-context'
 import { pullCloudProfile, pushCloudProfile, mergeProfiles } from '@/lib/ecard/cloud-sync'
+import { calculateVictoryReward, calculateDebtPenalty, calculateDebtReduction } from '@/lib/ecard/balance'
 
 type Screen = 'intro' | 'lobby' | 'game'
 type Phase = 'select' | 'reveal' | 'result'
@@ -489,6 +490,7 @@ export function EcardGame() {
   const [opponentName, setOpponentName] = useState('')
   const [pvpWaiting, setPvpWaiting] = useState(false) // host: table open, no challenger yet
   const [pvpAwaitingOpponent, setPvpAwaitingOpponent] = useState(false) // both mid-match: I picked, they haven't (yet)
+  const [pvpRoomStake, setPvpRoomStake] = useState<number | null>(null)
 
   // ---- refs ----
   const enemyPickRef = useRef<string>('')
@@ -744,10 +746,11 @@ export function EcardGame() {
     // Cleanup on unmount
     const onUnload = () => {
       if (hostedRoomRef.current) {
-        unregisterServerRoom(hostedRoomRef.current)
+        const roomCodeToRemove = hostedRoomRef.current
+        unregisterServerRoom(roomCodeToRemove)
         // Broadcast room destruction
         wsRef.current?.emit('ROOM_DESTROYED', {
-          roomCode: hostedRoomRef.current,
+          roomCode: roomCodeToRemove,
           hostName: name,
         })
       }
@@ -759,9 +762,10 @@ export function EcardGame() {
       window.removeEventListener('beforeunload', onUnload)
       clearTimers()
       if (hostedRoomRef.current) {
-        unregisterServerRoom(hostedRoomRef.current)
+        const roomCodeToRemove = hostedRoomRef.current
+        unregisterServerRoom(roomCodeToRemove)
         wsRef.current?.emit('ROOM_DESTROYED', {
-          roomCode: hostedRoomRef.current,
+          roomCode: roomCodeToRemove,
           hostName: name,
         })
       }
@@ -869,6 +873,12 @@ export function EcardGame() {
     setMonochrome(false)
     setMessages([])
     setBubbles([])
+    setResultText('')
+    setSelectedIndex(null)
+    setPhase('select')
+    setVerdict(null)
+    setPvpAwaitingOpponent(false)
+    setOpponentWagerNotification('')
     setScreen('game')
     startRound(1)
   }, [startRound])
@@ -891,14 +901,17 @@ export function EcardGame() {
         // Host opens the table and genuinely WAITS — no bot, no local game
         // starts yet. It stays visible/joinable in the shared directory
         // until exactly one real challenger takes the seat.
+        const stake = opts.wager ?? 10_000_000
         pvpRoleRef.current = 'host'
         setPvpRole('host')
         setOpponentName('')
         hostedRoomRef.current = opts.roomCode
+        setPvpRoomStake(stake)
+        setRoundWager(stake)
         const updated = registerServerRoom({
           id: opts.roomCode,
           hostName: opts.name ?? 'Kẻ Vô Danh',
-          wager: opts.wager ?? LOSS_DEBT,
+          wager: stake,
           faction: PLAYER_STARTS_AS,
           isPrivate: Boolean(opts.isPrivate),
           status: 'WAITING',
@@ -910,21 +923,34 @@ export function EcardGame() {
         wsRef.current?.emit('ROOM_CREATED', {
           roomCode: opts.roomCode,
           hostName: opts.name ?? 'Kẻ Vô Danh',
-          wager: opts.wager ?? LOSS_DEBT,
+          wager: stake,
           faction: PLAYER_STARTS_AS,
           isPrivate: Boolean(opts.isPrivate),
         })
         setPvpWaiting(true)
         return // do NOT enter the game screen yet — wait for ROOM_JOINED
       } else if (m === 'PVP' && !opts.host && opts.roomCode) {
+        // Prevent a host from joining their own room as if they were a guest.
+        if (pvpRoleRef.current === 'host' && hostedRoomRef.current === opts.roomCode) {
+          setPvpWaiting(false)
+          setPvpRole(null)
+          pvpRoleRef.current = null
+          setRoomCode(undefined)
+          setScreen('lobby')
+          return
+        }
+
         // A challenger just took the seat — the table is now full. Lock it
         // immediately in the shared directory so nobody else can pile in,
         // and tell every other open tab/client (including the host) to do
         // the same and learn who just walked in.
         pvpRoleRef.current = 'guest'
         setPvpRole('guest')
-        const existing = servers.find((s) => s.id === opts.roomCode)
+        const existing = loadServers().find((s) => s.id === opts.roomCode)
         setOpponentName(existing?.hostName ?? 'Đối Thủ')
+        const stake = existing?.wager ?? opts.wager ?? 10_000_000
+        setPvpRoomStake(stake)
+        setRoundWager(stake)
         const updated = registerServerRoom({
           id: opts.roomCode,
           hostName: existing?.hostName ?? 'Kẻ Vô Danh',
@@ -935,7 +961,7 @@ export function EcardGame() {
           createdAt: existing?.createdAt ?? Date.now(),
         })
         setServers(updated)
-        setRoundWager(existing?.wager ?? opts.wager ?? 10_000_000)
+        setRoundWager(stake)
         wsRef.current?.emit('ROOM_JOINED', {
           roomCode: opts.roomCode,
           challengerName: opts.name ?? 'Kẻ Vô Danh',
@@ -970,19 +996,28 @@ export function EcardGame() {
     return () => engine.off('ROOM_JOINED', onRoomJoined)
   }, [wsConnected, enterMatch])
 
+  const resetPvpSession = useCallback(() => {
+    setPvpWaiting(false)
+    setPvpAwaitingOpponent(false)
+    pvpRoleRef.current = null
+    setPvpRole(null)
+    setOpponentName('')
+    setRoomCode(undefined)
+    setPvpRoomStake(null)
+    hostedRoomRef.current = undefined
+  }, [])
+
   const cancelPvpWaiting = useCallback(() => {
     audio.click()
     if (hostedRoomRef.current) {
-      unregisterServerRoom(hostedRoomRef.current)
-      wsRef.current?.emit('ROOM_DESTROYED', { roomCode: hostedRoomRef.current, hostName: name })
-      setServers(unregisterServerRoom(hostedRoomRef.current))
-      hostedRoomRef.current = undefined
+      const roomCodeToRemove = hostedRoomRef.current
+      unregisterServerRoom(roomCodeToRemove)
+      wsRef.current?.emit('ROOM_DESTROYED', { roomCode: roomCodeToRemove, hostName: name })
+      setServers((prev) => prev.filter((server) => server.id !== roomCodeToRemove))
     }
-    setPvpWaiting(false)
-    pvpRoleRef.current = null
-    setPvpRole(null)
-    setRoomCode(undefined)
-  }, [name])
+    resetPvpSession()
+    setScreen('lobby')
+  }, [name, resetPvpSession])
 
   // ---- ULTIMATE LIFE-WAGER ----
   const activateLifeWager = useCallback(() => {
@@ -1046,20 +1081,24 @@ export function EcardGame() {
     const updated = recordDeath(displayName, { debt: currentDebt + LOSS_DEBT, wins: playerWins, fingerprint, role: profile.role })
     setLeaderboard(updated)
     setProfile(recordMatchOutcome({ wins: playerWins }))
-    if (hostedRoomRef.current) {
-      setServers(unregisterServerRoom(hostedRoomRef.current))
+    if (roomCode) {
       wsRef.current?.emit('ROOM_DESTROYED', {
-        roomCode: hostedRoomRef.current,
-        hostName: name,
+        roomCode,
+        hostName: displayName,
       })
+    }
+    if (hostedRoomRef.current) {
+      const roomCodeToRemove = hostedRoomRef.current
+      setServers(unregisterServerRoom(roomCodeToRemove))
       hostedRoomRef.current = undefined
     }
+    resetPvpSession()
     later(() => {
       audio.stopBreathing()
       audio.stopDirge()
       setVerdict('despair')
     }, 3400)
-  }, [clearTimers, later, name, currentDebt, playerWins])
+  }, [clearTimers, later, currentDebt, playerWins, resetPvpSession, roomCode, displayName])
 
   const triggerVictory = useCallback(() => {
     clearTimers()
@@ -1067,20 +1106,27 @@ export function EcardGame() {
     audio.stopDirge()
     audio.win()
     audio.breathingBurst(0.7, 5)
-    const winnings = (playerWins * 40_000_000 + START_HP * 1_000_000) * (balance?.rewardMultiplier ?? 1)
+    const winnings = calculateVictoryReward(
+      playerWins + 1,
+      balance?.rewardMultiplier ?? 1,
+      mode === 'PVP' ? pvpRoomStake ?? roundWager ?? 10_000_000 : 10_000_000,
+      mode === 'PVP',
+    )
     const updated = recordProgress(displayName, { wins: playerWins + 1, debt: 0, fingerprint, role: profile.role })
     setLeaderboard(updated)
     setProfile(recordMatchOutcome({ wins: playerWins + 1, winnings }))
     if (hostedRoomRef.current) {
-      setServers(unregisterServerRoom(hostedRoomRef.current))
+      const roomCodeToRemove = hostedRoomRef.current
+      setServers(unregisterServerRoom(roomCodeToRemove))
       wsRef.current?.emit('ROOM_DESTROYED', {
-        roomCode: hostedRoomRef.current,
-        hostName: name,
+        roomCode: roomCodeToRemove,
+        hostName: displayName,
       })
       hostedRoomRef.current = undefined
     }
+    resetPvpSession()
     later(() => setVerdict('survived'), 600)
-  }, [clearTimers, later, name, playerWins, balance?.rewardMultiplier])
+  }, [clearTimers, later, displayName, playerWins, balance?.rewardMultiplier, pvpRoomStake, roundWager, mode, resetPvpSession])
 
   // ---- REVEAL + RESOLVE ----
   // `isPvp` distinguishes a genuine real-PVP round (both sides always
@@ -1118,7 +1164,7 @@ export function EcardGame() {
             setCurrentDebt(0)
             text = 'ULTIMATE SURVIVAL! Mọi nợ nần đã được xóa bỏ!'
           } else {
-            setCurrentDebt((d) => (critical ? Math.floor(d * 0.5) : d))
+            setCurrentDebt((d) => calculateDebtReduction(d, critical))
             text = critical ? 'CRITICAL WIN! Nợ nần giảm 50%!' : 'You win the exchange.'
           }
 
@@ -1138,7 +1184,7 @@ export function EcardGame() {
           setPlayerHP(nextPlayerHP)
           setEnemyWins((w) => w + 1)
           setDrillProgress(nextDrill)
-          setCurrentDebt((d) => d + (roundWager ?? 10_000_000))
+          setCurrentDebt((d) => d + calculateDebtPenalty(roundWager ?? 10_000_000, mode === 'PVP'))
           audio.drill()
           audio.hitDamage(critical)
           setPlayerHit(true)
@@ -1161,8 +1207,15 @@ export function EcardGame() {
             setEnding('victory')
             triggerVictory()
           } else if (round >= TOTAL_ROUNDS) {
-            setEnding('execution')
-            triggerExecution()
+            const playerWinMargin = nextPlayerHP - nextEnemyHP
+            const roundWinMargin = playerWins - enemyWins
+            if (playerWinMargin > 0 || (playerWinMargin === 0 && roundWinMargin >= 0)) {
+              setEnding('victory')
+              triggerVictory()
+            } else {
+              setEnding('execution')
+              triggerExecution()
+            }
           } else {
             setRound((r) => r + 1)
             startRound(round + 1)
@@ -1278,7 +1331,7 @@ export function EcardGame() {
   const surrender = useCallback(() => {
     audio.click()
     clearTimers()
-    
+
     // SAFE EXIT: If the match hasn't really started or we are just waiting for opponent to join/pick,
     // we can exit without the 5-min dungeon lock penalty.
     const isSafeExit = pvpAwaitingOpponent || (mode === 'PVP' && round === 1 && phase === 'select' && playerHP === START_HP)
@@ -1287,13 +1340,15 @@ export function EcardGame() {
       wsRef.current?.emit('ROOM_DESTROYED', { roomCode, hostName: displayName })
     }
     if (hostedRoomRef.current) {
-      unregisterServerRoom(hostedRoomRef.current)
-      setServers(unregisterServerRoom(hostedRoomRef.current))
+      const roomCodeToRemove = hostedRoomRef.current
+      unregisterServerRoom(roomCodeToRemove)
+      setServers((prev) => prev.filter((server) => server.id !== roomCodeToRemove))
       hostedRoomRef.current = undefined
     }
 
     if (mode === 'AI' || isSafeExit) {
       audio.stopHeart?.()
+      resetPvpSession()
       setScreen('lobby')
       if (isSafeExit) addMessage('system', 'Đã thoát phòng an toàn.')
       return
@@ -1616,7 +1671,9 @@ export function EcardGame() {
 
       {mounted && <ExecutionOverlay active={executing} originX={0.22} originY={0.45} />}
 
-      {ending && (
+      {verdict ? (
+        <VerdictOverlay verdict={verdict} onComplete={() => setVerdict(null)} />
+      ) : ending ? (
         <div className="fixed inset-0 z-[10001] flex items-center justify-center bg-black/85 backdrop-blur-sm">
           <div className="w-full max-w-md rounded-lg border border-border bg-card p-6 text-center shadow-2xl">
             <h2 className={`font-display text-3xl font-black tracking-widest ${ending === 'victory' ? 'text-gold' : 'text-blood'}`}>
@@ -1625,23 +1682,26 @@ export function EcardGame() {
             <p className="mt-2 text-sm text-muted-foreground">
               {ending === 'victory' ? 'You walked out of the abyss.' : 'The gauntlet claimed you.'}
             </p>
-            <div className="mt-5 flex justify-center gap-3">
+            <div className="mt-5 flex flex-col gap-3 sm:flex-row sm:justify-center">
               <button
                 onClick={() => startMatch(mode, { name, roomCode })}
-                className="rounded border border-gold px-5 py-2 text-gold hover:bg-gold/10 transition-colors uppercase text-xs font-bold tracking-widest"
+                className="rounded border border-gold bg-gold/10 px-5 py-2 text-gold hover:bg-gold/20 transition-all duration-300 ease-out uppercase text-xs font-bold tracking-widest"
               >
                 Play Again
               </button>
               <button
-                onClick={() => setScreen('lobby')}
-                className="rounded border border-border px-5 py-2 text-muted-foreground hover:text-white transition-colors uppercase text-xs font-bold tracking-widest"
+                onClick={() => {
+                  resetPvpSession()
+                  setScreen('lobby')
+                }}
+                className="rounded border border-border bg-white/5 px-5 py-2 text-muted-foreground hover:bg-white/10 hover:text-white transition-all duration-300 ease-out uppercase text-xs font-bold tracking-widest"
               >
                 Lobby
               </button>
             </div>
           </div>
         </div>
-      )}
+      ) : null}
 
       {cheatDetected && (
         <div className="fixed inset-0 z-[10002] flex items-center justify-center bg-red-950/90 backdrop-blur-md">
