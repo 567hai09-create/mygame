@@ -1,0 +1,312 @@
+@import 'tailwindcss';
+@import 'tw-animate-css';
+@import 'shadcn/tailwind.css';
+
+@custom-variant dark (&:is(.dark *));
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+
+  /* E-Card faction palette */
+  --color-gold: var(--gold);
+  --color-gold-dim: var(--gold-dim);
+  --color-blood: var(--blood);
+  --color-blood-dim: var(--blood-dim);
+  --color-obsidian: var(--obsidian);
+  --color-citizen: var(--citizen);
+  --color-parchment: var(--parchment);
+
+  --font-display: var(--font-cinzel), Georgia, serif;
+  --font-sans: var(--font-body), ui-sans-serif, system-ui, sans-serif;
+
+  --radius-sm: calc(var(--radius) * 0.6);
+  --radius-md: calc(var(--radius) * 0.8);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) * 1.4);
+}
+
+:root {
+  color-scheme: dark;
+  --background: oklch(0.055 0.007 55);
+  --foreground: oklch(0.88 0.012 75);
+  --card: oklch(0.1 0.011 55);
+  --card-foreground: oklch(0.88 0.012 75);
+  --muted: oklch(0.15 0.009 55);
+  --muted-foreground: oklch(0.55 0.014 65);
+  --border: oklch(0.24 0.022 45);
+  --input: oklch(0.17 0.014 55);
+  --ring: oklch(0.55 0.1 70);
+
+  --gold: oklch(0.64 0.12 78);
+  --gold-dim: oklch(0.44 0.08 78);
+  --blood: oklch(0.46 0.18 20);
+  --blood-dim: oklch(0.27 0.13 20);
+  --obsidian: oklch(0.1 0.012 260);
+  --citizen: oklch(0.5 0.03 220);
+  --parchment: oklch(0.14 0.013 70);
+  /* deepest layer — used for vignette edges and modal backdrops */
+  --abyss: oklch(0.02 0.006 40);
+
+  --radius: 0.5rem;
+}
+
+/* Subtle breathing vignette so every screen reads a shade more haunted
+   without touching any layout or interaction logic. */
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+  background: radial-gradient(ellipse at center, transparent 45%, var(--abyss) 130%);
+  opacity: 0.55;
+  mix-blend-mode: multiply;
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  html {
+    @apply bg-background;
+  }
+  body {
+    @apply bg-background text-foreground font-sans;
+    overscroll-behavior: none;
+  }
+}
+
+/* ----- Atmospheric effects (kept gentle on purpose: soft candlelight breathing,
+   not a strobe — comfortable to look at for a full match, no hard eye-strain). ----- */
+@keyframes bulb-flicker {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  8% {
+    opacity: 0.97;
+  }
+  10% {
+    opacity: 0.99;
+  }
+  22% {
+    opacity: 0.96;
+  }
+  24% {
+    opacity: 1;
+  }
+  70% {
+    opacity: 0.98;
+  }
+  72% {
+    opacity: 1;
+  }
+}
+
+.flicker {
+  animation: bulb-flicker 6.5s infinite ease-in-out;
+}
+
+@keyframes table-shake {
+  0%,
+  100% {
+    transform: translate(0, 0);
+  }
+  20% {
+    transform: translate(-1px, 0.6px);
+  }
+  40% {
+    transform: translate(1px, -0.6px);
+  }
+  60% {
+    transform: translate(-0.7px, -1px);
+  }
+  80% {
+    transform: translate(0.7px, 1px);
+  }
+}
+
+.shake {
+  animation: table-shake 0.32s ease-in-out 2;
+}
+
+@keyframes glitch-flash {
+  0%,
+  100% {
+    filter: none;
+    opacity: 1;
+  }
+  25% {
+    filter: invert(1) hue-rotate(90deg);
+    opacity: 0.85;
+  }
+  50% {
+    filter: saturate(3) brightness(1.4);
+    opacity: 0.95;
+  }
+  75% {
+    filter: invert(1);
+    opacity: 0.8;
+  }
+}
+
+.glitch {
+  animation: glitch-flash 0.12s infinite steps(1, end);
+}
+
+.vignette::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 30;
+  background: radial-gradient(
+    circle at center,
+    transparent 18%,
+    rgba(0, 0, 0, 0.55) 70%,
+    rgba(0, 0, 0, 0.97) 100%
+  );
+}
+
+.monochrome {
+  filter: grayscale(100%) contrast(1.4) brightness(0.85);
+  transition: filter 0.4s ease-out;
+}
+
+/* thin scrollbar for chat */
+.thin-scroll::-webkit-scrollbar {
+  width: 6px;
+}
+.thin-scroll::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 999px;
+}
+.thin-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+/* Reusable deep multi-layered ambient-occlusion shadow for primary panels */
+.deep-panel {
+  box-shadow:
+    0 10px 30px -5px rgba(0, 0, 0, 0.9),
+    0 20px 60px -10px rgba(0, 0, 0, 0.95),
+    inset 0 1px 0 0 rgba(255, 255, 255, 0.03);
+}
+
+/* ----- Persistent CRT bunker-screen overlay (site-wide, non-interactive) ----- */
+.crt-layer {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  pointer-events: none;
+}
+.crt-layer::before {
+  /* horizontal scan rows + faint RGB channel fringe, like a low-voltage security monitor */
+  content: '';
+  position: absolute;
+  inset: 0;
+  background:
+    linear-gradient(rgba(18, 16, 16, 0) 50%, rgba(0, 0, 0, 0.28) 50%),
+    linear-gradient(90deg, rgba(255, 0, 0, 0.025), rgba(0, 255, 0, 0.012), rgba(0, 0, 255, 0.025));
+  background-size: 100% 4px, 6px 100%;
+  mix-blend-mode: overlay;
+  opacity: 0.32;
+}
+.crt-layer::after {
+  /* softer perimeter vignette — atmosphere without crushing the edges to black */
+  content: '';
+  position: absolute;
+  inset: 0;
+  box-shadow: inset 0 0 140px rgba(0, 0, 0, 0.75);
+}
+
+/* ----- Cinematic despair / triumph overlays (toned down: a light tremor you
+   feel more than see, no violent jolt and no strobing). ----- */
+@keyframes violent-shake {
+  0%, 100% { transform: translate(0, 0); }
+  10% { transform: translate(-2px, 1px); }
+  20% { transform: translate(1.5px, -1.5px); }
+  30% { transform: translate(-1.5px, 1.5px); }
+  40% { transform: translate(1.5px, 1px); }
+  50% { transform: translate(-1.5px, -1px); }
+  60% { transform: translate(1px, 1.5px); }
+  70% { transform: translate(-1px, -1.5px); }
+  80% { transform: translate(1.5px, 0.7px); }
+  90% { transform: translate(-1px, 1px); }
+}
+.violent-shake { animation: violent-shake 0.5s ease-in-out 1; }
+
+@keyframes gold-flash {
+  0%, 100% { background-color: rgba(179, 145, 74, 0.14); }
+  50% { background-color: rgba(255, 224, 160, 0.32); }
+}
+.gold-flash { animation: gold-flash 0.9s ease-in-out 2; }
+
+/* ----- Candlelit rim-light flicker for the seated character silhouettes ----- */
+@keyframes candle-rim-flicker {
+  0%, 100% { opacity: 1; }
+  4% { opacity: 0.86; }
+  9% { opacity: 1; }
+  33% { opacity: 0.92; }
+  38% { opacity: 1; }
+  61% { opacity: 0.88; }
+  67% { opacity: 1; }
+  84% { opacity: 0.95; }
+}
+
+/* ----- HP-loss hit pulse: one quick red ring around the HP bar the instant
+   damage lands. Single pulse (no loop), pairs with the gunshot-crack sound. ----- */
+@keyframes hp-hit-pulse-kf {
+  0% { border-color: rgba(255, 60, 60, 0.95); box-shadow: 0 0 0 0 rgba(255, 40, 40, 0.55); }
+  100% { border-color: var(--border); box-shadow: 0 0 0 4px rgba(255, 40, 40, 0); }
+}
+.hp-hit-pulse {
+  animation: hp-hit-pulse-kf 0.38s ease-out 1;
+}
+
+.scanlines::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: repeating-linear-gradient(0deg, rgba(0,0,0,0.32) 0px, rgba(0,0,0,0.32) 1px, transparent 1px, transparent 3px);
+  mix-blend-mode: multiply;
+}
+
+/* ----- Match-enter cue: fires once, ~650ms, right as a round begins.
+   Replaced the old digital glitch (screen invert + hard strobe cuts) with a
+   single soft candle-ignite wash — a warm light bloom that breathes in and
+   fades out. No inverted colors, no steps()-strobing, nothing outside a
+   gentle fade — comfortable even across 12 rounds in a row. ----- */
+@keyframes match-enter-glow {
+  0% {
+    opacity: 0;
+  }
+  35% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+.match-enter-glitch-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 70;
+  pointer-events: none;
+  background: radial-gradient(
+    circle at center,
+    rgba(255, 214, 150, 0.16) 0%,
+    rgba(255, 214, 150, 0.05) 45%,
+    transparent 75%
+  );
+  animation: match-enter-glow 0.9s ease-out 1;
+}
