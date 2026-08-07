@@ -1242,7 +1242,7 @@ export function EcardGame() {
     }, 45000)
     
     return () => window.clearTimeout(timeoutId)
-  }, [mounted, screen, pvpAwaitingOpponent, surrender])
+  }, [mounted, screen, pvpAwaitingOpponent])
 
   // ---- TIMER EFFECT ----
   useEffect(() => {
