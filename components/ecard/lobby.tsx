@@ -93,6 +93,13 @@ export function Lobby({
   const [showRoleSelection, setShowRoleSelection] = useState(false)
 
   useEffect(() => {
+    setRoomCode('')
+    setJoinCode('')
+    setIsPrivate(false)
+    setRoomWager(DEFAULT_ROOM_WAGER)
+  }, [])
+
+  useEffect(() => {
     if (profile.totalAccumulatedWinnings >= 10_000_000_000 && profile.role === 'none') {
       setShowRoleSelection(true)
     }
@@ -282,7 +289,8 @@ export function Lobby({
                     {roomCode || '------'}
                   </div>
                   <button
-                    onClick={() => setRoomCode?.(generateRoomCode())}
+                    type="button"
+                    onClick={() => setRoomCode(generateRoomCode())}
                     className="bg-zinc-900 border border-zinc-700 px-3 text-[10px] uppercase font-bold text-zinc-400 hover:text-white transition-colors"
                   >
                     Gen
@@ -319,7 +327,7 @@ export function Lobby({
                 <p className="text-[10px] uppercase tracking-widest text-zinc-500">Tham Gia / Join</p>
                 <input
                   value={joinCode}
-                  onChange={(e) => setJoinCode?.(e.target.value.toUpperCase().slice(0, 6))}
+                  onChange={(e) => setJoinCode(e.target.value.toUpperCase().slice(0, 6))}
                   placeholder="MÃ PHÒNG"
                   className="w-full bg-[#050505] border border-zinc-800 px-3 py-2 text-center font-display text-xl tracking-[0.4em] text-zinc-200 focus:border-[#9e2a2b]/50 outline-none transition-colors"
                 />
@@ -528,12 +536,12 @@ export function Lobby({
       )}
 
       {pvpWaiting && (
-        <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-black/85 backdrop-blur-sm p-4">
+        <div role="dialog" aria-modal="true" className="fixed inset-0 z-[10000] flex items-center justify-center bg-black/85 backdrop-blur-sm p-4">
           <div className="w-full max-w-sm rounded-lg border border-[#b3914a]/40 bg-[#0a0a0d] p-6 text-center shadow-2xl">
             <div className="mx-auto mb-4 h-10 w-10 animate-spin rounded-full border-2 border-[#b3914a]/30 border-t-[#b3914a]" />
             <h2 className="font-display text-xl font-black tracking-widest text-[#b3914a]">ĐANG CHỜ ĐỐI THỦ</h2>
             <p className="mt-2 text-xs text-zinc-400">
-              Bàn <span className="text-[#b3914a] font-mono">{waitingRoomCode}</span> đang mở — trận đấu chỉ bắt đầu khi có một người chơi thật bước vào.
+              Bàn <span className="text-[#b3914a] font-mono">{waitingRoomCode || '------'}</span> đang mở — trận đấu chỉ bắt đầu khi có một người chơi thật bước vào.
             </p>
             <button
               type="button"
