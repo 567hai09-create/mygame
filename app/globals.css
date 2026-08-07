@@ -24,7 +24,7 @@
   --color-citizen: var(--citizen);
   --color-parchment: var(--parchment);
 
-  --font-display: var(--font-cinzel), Georgia, serif;
+  --font-display: var(--font-cinzel), var(--font-body), Georgia, serif;
   --font-sans: var(--font-body), ui-sans-serif, system-ui, sans-serif;
 
   --radius-sm: calc(var(--radius) * 0.6);
