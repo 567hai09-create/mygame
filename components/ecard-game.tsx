@@ -1367,7 +1367,7 @@ export function EcardGame() {
             leaderboard={leaderboard}
             profile={profile}
             servers={servers}
-            onStart={onStart}
+            onStart={startMatch}
             onProfileNameChange={(playerName) => setProfile((p) => ({ ...p, playerName }))}
             onSaveProfile={(patch) => setProfile(patchProfile(patch))}
             onReplayIntro={() => setScreen('intro')}
