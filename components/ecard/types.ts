@@ -34,6 +34,7 @@ export interface GlobalChatMessage {
   color: string
   timestamp: number
   self?: boolean
+  clientId: string
 }
 
 export const HYODO_LINES = {
