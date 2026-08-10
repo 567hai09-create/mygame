@@ -51,6 +51,7 @@ import { IntroStory, hasSeenIntro } from '@/components/ecard/intro-story'
 import { useAuth } from '@/lib/firebase/auth-context'
 import { pullCloudProfile, pushCloudProfile, mergeProfiles } from '@/lib/ecard/cloud-sync'
 import { calculateVictoryReward, calculateDebtPenalty, calculateDebtReduction } from '@/lib/ecard/balance'
+import { getDungeonCooldownMs } from '@/lib/ecard/leaderboard'
 
 type Screen = 'intro' | 'lobby' | 'game'
 type Phase = 'select' | 'reveal' | 'result'
@@ -479,6 +480,7 @@ export function EcardGame() {
 
   const [dungeonLocked, setDungeonLocked] = useState(false)
   const [dungeonSeconds, setDungeonSeconds] = useState(0)
+  const [aiLockSeconds, setAiLockSeconds] = useState(0)
   const [wsConnected, setWsConnected] = useState(false)
 
   // ---- REAL PVP state (peer-to-peer over the WebSocket relay — no bot) ----
@@ -518,12 +520,90 @@ export function EcardGame() {
   const enemyFaction: Faction = faction === 'KING' ? 'SLAVE' : 'KING'
 
   // ---- utility functions ----
+  const AI_LOCK_KEY = 'ai_loss_lock_until_v1'
+  const AI_LOCK_DURATION_MS = 30 * 1000
+
+  const setAiLock = useCallback(() => {
+    if (typeof window === 'undefined') return
+    try {
+      const until = Date.now() + AI_LOCK_DURATION_MS
+      window.localStorage.setItem(AI_LOCK_KEY, String(until))
+      setAiLockSeconds(Math.ceil(AI_LOCK_DURATION_MS / 1000))
+      const id = window.setInterval(() => {
+        setAiLockSeconds((s) => {
+          if (s <= 1) {
+            window.clearInterval(id)
+            return 0
+          }
+          return s - 1
+        })
+      }, 1000)
+      intervalsRef.current.push(id)
+    } catch (err) {
+      // ignore storage errors
+    }
+  }, [])
+
+  const getAiLockRemainingMs = useCallback(() => {
+    if (typeof window === 'undefined') return 0
+    try {
+      const v = window.localStorage.getItem(AI_LOCK_KEY)
+      if (!v) return 0
+      const until = parseInt(v, 10)
+      const rem = until - Date.now()
+      return rem > 0 ? rem : 0
+    } catch (err) {
+      return 0
+    }
+  }, [])
+
   const later = useCallback((fn: () => void, ms: number) => {
     if (typeof window === 'undefined') return 0
     const id = window.setTimeout(fn, ms)
     timeoutsRef.current.push(id)
     return id
   }, [])
+
+  // Ask global hub for AI match approval (server-enforced lock)
+  const requestAiApproval = useCallback((): Promise<{ allowed: boolean; remainingMs?: number }>
+    => {
+    return new Promise((resolve) => {
+      const engine = wsRef.current
+      if (!engine || !engine.getConnectionStatus()) return resolve({ allowed: true })
+
+      let settled = false
+      function onApproved(_data: any) {
+        if (settled) return
+        settled = true
+        engine.off('AI_MATCH_APPROVED', onApproved)
+        engine.off('AI_MATCH_REJECTED', onRejected)
+        resolve({ allowed: true })
+      }
+      function onRejected(data: any) {
+        if (settled) return
+        settled = true
+        engine.off('AI_MATCH_APPROVED', onApproved)
+        engine.off('AI_MATCH_REJECTED', onRejected)
+        resolve({ allowed: false, remainingMs: data?.remainingMs ?? 0 })
+      }
+
+      engine.on('AI_MATCH_APPROVED', onApproved)
+      engine.on('AI_MATCH_REJECTED', onRejected)
+
+      // Emit request (engine will attach clientId/timestamp)
+      engine.emit('AI_MATCH_REQUEST', { fingerprint })
+
+      // Fallback timeout: treat as allowed if no response in 2s
+      const to = window.setTimeout(() => {
+        if (settled) return
+        settled = true
+        engine.off('AI_MATCH_APPROVED', onApproved)
+        engine.off('AI_MATCH_REJECTED', onRejected)
+        resolve({ allowed: true })
+      }, 2000)
+      timeoutsRef.current.push(to)
+    })
+  }, [fingerprint])
 
   const clearTimers = useCallback(() => {
     if (typeof window === 'undefined') return
@@ -665,7 +745,15 @@ export function EcardGame() {
           status: 'WAITING',
           createdAt: data.timestamp,
         }
-        setServers((prev) => [...prev, newRoom])
+        setServers((prev) => {
+          const existingIndex = prev.findIndex((room) => room.id === newRoom.id)
+          if (existingIndex >= 0) {
+            const next = [...prev]
+            next[existingIndex] = { ...next[existingIndex], ...newRoom }
+            return next
+          }
+          return [...prev, newRoom]
+        })
       })
 
       // Listen for room destruction events
@@ -786,6 +874,28 @@ export function EcardGame() {
   }, [bpm, screen, ending, mounted])
 
   useEffect(() => {
+    if (!mounted) return
+    if (screen === 'game' && !ending && !executing && phase === 'select' && !pvpAwaitingOpponent) {
+      audio.startClockTick()
+    } else {
+      audio.stopClockTick()
+    }
+  }, [screen, ending, executing, phase, pvpAwaitingOpponent, mounted])
+
+  useEffect(() => {
+    if (!mounted) return
+    const shouldManageBreathing = screen === 'game' && phase !== 'result' && !ending && !executing && !split
+    const lowHp = playerHP <= 30 || enemyHP <= 30
+
+    if (shouldManageBreathing && lowHp) {
+      const intensity = 0.16 + (30 - Math.min(playerHP, enemyHP)) / 30 * 0.16
+      audio.startBreathing(Math.max(0.16, Math.min(0.38, intensity)))
+    } else if (shouldManageBreathing) {
+      audio.stopBreathing()
+    }
+  }, [screen, phase, ending, executing, split, playerHP, enemyHP, mounted])
+
+  useEffect(() => {
     if (mounted) audio.setMuted(muted)
   }, [muted, mounted])
 
@@ -860,6 +970,7 @@ export function EcardGame() {
   // by a normal match start (AI, or PVP guest joining) and by the host the
   // moment a real challenger takes the seat at their table.
   const enterMatch = useCallback(() => {
+    clearTimers()
     setRound(1)
     setPlayerHP(START_HP)
     setEnemyHP(START_HP)
@@ -881,10 +992,28 @@ export function EcardGame() {
     setOpponentWagerNotification('')
     setScreen('game')
     startRound(1)
-  }, [startRound])
+  }, [clearTimers, startRound])
 
   const startMatch = useCallback(
     (m: GameMode, opts: StartOpts) => {
+      // Prevent starting AI matches while locked after recent loss (client-side)
+      if (m === 'AI') {
+        const rem = getAiLockRemainingMs()
+        if (rem > 0) {
+          addMessage('system', `Bạn đang bị khóa sau khi thua bot. Vui lòng đợi ${Math.ceil(rem / 1000)} giây.`)
+          return
+        }
+        // Also request server approval (server may enforce global locks)
+        requestAiApproval().then((res) => {
+          if (!res.allowed) {
+            addMessage('system', `Bạn đang bị khóa trên server. Vui lòng đợi ${Math.ceil((res.remainingMs ?? 0) / 1000)} giây.`)
+            return
+          }
+          // server allowed: continue starting match
+          startMatch(m, opts)
+        })
+        return
+      }
       audio.ensure()
       audio.playMatchIntroStinger()
       setMatchEnterGlitch(true)
@@ -976,7 +1105,7 @@ export function EcardGame() {
       enterMatch()
       if (m === 'AI') later(() => hyodoTaunt(HYODO_LINES.start), 700)
     },
-    [clearTimers, later, hyodoTaunt, servers, enterMatch],
+    [clearTimers, later, hyodoTaunt, servers, enterMatch, getAiLockRemainingMs, addMessage, requestAiApproval],
   )
 
   // ---- Host side: fires the instant a real challenger joins our table ----
@@ -1004,6 +1133,11 @@ export function EcardGame() {
     setOpponentName('')
     setRoomCode(undefined)
     setPvpRoomStake(null)
+    setExecuting(false)
+    setSplit(false)
+    setMonochrome(false)
+    setVerdict(null)
+    setEnding(null)
     hostedRoomRef.current = undefined
   }, [])
 
@@ -1069,6 +1203,9 @@ export function EcardGame() {
     setExecuting(true)
     setSplit(true)
     setShake(true)
+    setVerdict(null)
+    setEnding(null)
+    audio.stopClockTick()
     audio.explosion()
     audio.drill()
     audio.stopHeart()
@@ -1093,16 +1230,32 @@ export function EcardGame() {
       hostedRoomRef.current = undefined
     }
     resetPvpSession()
+    // If this was an AI match, apply a temporary lock to prevent immediate rematch
+    try {
+      if (modeRef.current === 'AI') {
+        setAiLock()
+        try {
+          wsRef.current?.emit('AI_MATCH_LOSS', { fingerprint })
+        } catch (err) {
+          // ignore
+        }
+      }
+    } catch (err) {
+      // ignore
+    }
     later(() => {
       audio.stopBreathing()
       audio.stopDirge()
       setVerdict('despair')
     }, 3400)
-  }, [clearTimers, later, currentDebt, playerWins, resetPvpSession, roomCode, displayName])
+  }, [clearTimers, later, currentDebt, playerWins, resetPvpSession, roomCode, displayName, setAiLock])
 
   const triggerVictory = useCallback(() => {
     clearTimers()
     setPhase('result')
+    setVerdict(null)
+    setEnding(null)
+    audio.stopClockTick()
     audio.stopDirge()
     audio.win()
     audio.breathingBurst(0.7, 5)
@@ -1354,7 +1507,14 @@ export function EcardGame() {
       return
     }
 
-    const until = Date.now() + 60_000 * 5 // 5 min dungeon lock
+    if (profile.role === 'admin') {
+      addMessage('system', 'Quản trị viên bỏ qua thời gian khóa ngắn.')
+      resetPvpSession()
+      setScreen('lobby')
+      return
+    }
+
+    const until = Date.now() + getDungeonCooldownMs()
     saveDungeonLock(until)
     setDungeonLocked(true)
     setSplit(true)
@@ -1513,7 +1673,7 @@ export function EcardGame() {
                 {playerBubble.text}
               </div>
             )}
-            <Silhouette faction={faction} side="left" drillProgress={drillProgress} split={split} label="You" />
+            <Silhouette faction={faction} side="left" drillProgress={drillProgress} split={split} injuryLevel={Math.max(0, Math.min(1, 1 - playerHP / START_HP))} label="You" />
             <span className="mt-1 font-sans text-sm uppercase font-bold text-[#9e2a2b] drop-shadow-[0_0_5px_rgba(158,42,43,0.5)]">{name}</span>
           </div>
 
@@ -1556,163 +1716,3 @@ export function EcardGame() {
                   <input
                     type="range"
                     min="1000000"
-                    max="500000000"
-                    step="1000000"
-                    value={roundWager ?? 10000000}
-                    onChange={(e) => {
-                      const newWager = Number(e.target.value)
-                      setRoundWager(newWager)
-                      // Broadcast wager update via WebSocket
-                      wsRef.current?.emit('ROUND_WAGER_UPDATE', {
-                        playerName: name,
-                        wager: newWager,
-                      })
-                    }}
-                    disabled={wagerLocked}
-                    className="w-full h-1 bg-zinc-800 rounded-lg appearance-none cursor-pointer accent-gold disabled:opacity-50"
-                  />
-                  <div className="mt-2 font-display text-xl text-gold">🪙 {(roundWager ?? 0).toLocaleString()} COIN</div>
-                </div>
-                <p className="font-display text-lg tracking-[0.3em] text-muted-foreground uppercase">
-                  {faction === 'KING' ? 'RULE THEM ALL' : 'TOPPLE THE THRONE'}
-                </p>
-              </div>
-            )}
-            {resultText && <p className="max-w-md text-center text-sm text-gold animate-pulse">{resultText}</p>}
-            {mode === 'PVP' && pvpAwaitingOpponent && !resultText && (
-              <p className="flex items-center gap-2 text-xs uppercase tracking-widest text-zinc-400">
-                <span className="h-2 w-2 animate-pulse rounded-full bg-amber-400" />
-                Đang chờ {enemyShortLabel} ra bài...
-              </p>
-            )}
-          </div>
-
-          <div className="relative flex flex-col items-center">
-            {enemyBubble && (
-              <div className="absolute -top-14 z-30 max-w-[160px] animate-bounce rounded-lg border border-blood/50 bg-black px-3 py-1.5 text-center text-xs text-white shadow-lg">
-                {enemyBubble.text}
-              </div>
-            )}
-            <Silhouette faction={enemyFaction} side="right" split={split && ending === 'victory'} label={enemyLabel} />
-            <span className="mt-1 font-display text-sm tracking-wider font-bold text-[#b3914a] drop-shadow-[0_0_5px_rgba(179,145,74,0.5)]">{enemyShortLabel}</span>
-          </div>
-        </div>
-
-        <div
-          className="relative rounded-lg p-4"
-          style={{
-            background: 'linear-gradient(to bottom, #0e0c0b, #070504)',
-            borderTop: '1px solid #3a342a',
-            borderBottom: '1px solid #000',
-            borderLeft: '1px solid #211c17',
-            borderRight: '1px solid #211c17',
-            boxShadow:
-              '0 10px 30px -5px rgba(0,0,0,0.9), 0 20px 60px -10px rgba(0,0,0,0.95), inset 0 1px 0 0 rgba(255,255,255,0.03)',
-          }}
-        >
-          {/* iron corner brackets, holding the hand-tray "frame" in place */}
-          <span className="pointer-events-none absolute -left-px -top-px h-4 w-4 border-l-2 border-t-2 border-gold-dim/60" />
-          <span className="pointer-events-none absolute -right-px -top-px h-4 w-4 border-r-2 border-t-2 border-gold-dim/60" />
-          <span className="pointer-events-none absolute -bottom-px -left-px h-4 w-4 border-b-2 border-l-2 border-gold-dim/60" />
-          <span className="pointer-events-none absolute -bottom-px -right-px h-4 w-4 border-b-2 border-r-2 border-gold-dim/60" />
-          <div className="mb-3 text-center">
-            <span className="font-display text-[10px] uppercase tracking-[0.35em] text-zinc-500">
-              Bài Trên Tay / Your Hand · 1 {faction === 'KING' ? 'Hoàng Đế' : 'Nô Lệ'} + 4 Dân Thường
-            </span>
-          </div>
-          <div className="flex flex-wrap items-end justify-center gap-3 ring-1 ring-inset ring-red-950/20 rounded-md p-3">
-            {playerHand?.map((c, i) => (
-              <PlayingCard
-                key={c?.id}
-                type={c?.type}
-                faceUp
-                selected={selectedIndex === i}
-                disabled={phase !== 'select' || executing}
-                onSelect={() => selectCard(i)}
-              />
-            ))}
-          </div>
-          <div className="mt-4 flex flex-col items-center gap-4">
-            <div className="flex gap-3">
-              <button
-                onClick={onReady}
-                disabled={selectedIndex === null || phase !== 'select' || executing || pvpAwaitingOpponent}
-                className="rounded-md border border-gold bg-black px-8 py-2.5 text-base uppercase text-gold hover:scale-105 transition-all disabled:opacity-40"
-              >
-                {pvpAwaitingOpponent ? 'Đang chờ đối thủ...' : 'Ready / Sẵn Sàng'}
-              </button>
-            </div>
-
-            <button
-              onClick={activateLifeWager}
-              disabled={isLifeWagerActive || phase !== 'select' || executing}
-              className={`w-full max-w-xs py-3 rounded border-2 font-black tracking-widest uppercase transition-all ${
-                isLifeWagerActive
-                  ? 'border-red-600 bg-red-900/40 text-red-500 animate-pulse shadow-[0_0_20px_rgba(220,38,38,0.5)]'
-                  : 'border-zinc-700 bg-zinc-900 text-zinc-500 hover:border-red-800 hover:text-red-700 hover:shadow-[0_0_10px_rgba(139,0,0,0.3)]'
-              }`}
-            >
-              {isLifeWagerActive ? 'ULTIMATE LIFE-WAGER ACTIVE' : 'CƯỢC MẠNG / ULTIMATE LIFE-WAGER'}
-            </button>
-          </div>
-        </div>
-      </div>
-
-      <ChatDock
-        roomMessages={messages ?? []}
-        worldMessages={globalChatMessages ?? []}
-        roomCode={roomCode}
-        onSendRoom={onSendRoom}
-        onSendWorld={onWorldChatSend}
-        onQuickTaunt={onQuickTaunt}
-        onFocusChange={setInputActive}
-        wsConnected={wsConnected}
-      />
-
-      {mounted && <ExecutionOverlay active={executing} originX={0.22} originY={0.45} />}
-
-      {verdict ? (
-        <VerdictOverlay verdict={verdict} onComplete={() => setVerdict(null)} />
-      ) : ending ? (
-        <div className="fixed inset-0 z-[10001] flex items-center justify-center bg-black/85 backdrop-blur-sm">
-          <div className="w-full max-w-md rounded-lg border border-border bg-card p-6 text-center shadow-2xl">
-            <h2 className={`font-display text-3xl font-black tracking-widest ${ending === 'victory' ? 'text-gold' : 'text-blood'}`}>
-              {ending === 'victory' ? 'YOU SURVIVED' : 'EXECUTED'}
-            </h2>
-            <p className="mt-2 text-sm text-muted-foreground">
-              {ending === 'victory' ? 'You walked out of the abyss.' : 'The gauntlet claimed you.'}
-            </p>
-            <div className="mt-5 flex flex-col gap-3 sm:flex-row sm:justify-center">
-              <button
-                onClick={() => startMatch(mode, { name, roomCode })}
-                className="rounded border border-gold bg-gold/10 px-5 py-2 text-gold hover:bg-gold/20 transition-all duration-300 ease-out uppercase text-xs font-bold tracking-widest"
-              >
-                Play Again
-              </button>
-              <button
-                onClick={() => {
-                  resetPvpSession()
-                  setScreen('lobby')
-                }}
-                className="rounded border border-border bg-white/5 px-5 py-2 text-muted-foreground hover:bg-white/10 hover:text-white transition-all duration-300 ease-out uppercase text-xs font-bold tracking-widest"
-              >
-                Lobby
-              </button>
-            </div>
-          </div>
-        </div>
-      ) : null}
-
-      {cheatDetected && (
-        <div className="fixed inset-0 z-[10002] flex items-center justify-center bg-red-950/90 backdrop-blur-md">
-          <div className="text-center p-8 border-4 border-red-600 bg-black animate-pulse shadow-[0_0_50px_rgba(220,38,38,0.5)]">
-            <h1 className="text-5xl font-black text-red-600 mb-4">PHÁT HIỆN GIAN LẬN</h1>
-            <p className="text-xl text-white uppercase tracking-widest">Chạy chung phần cứng! Trận đấu này không được xếp hạng.</p>
-          </div>
-        </div>
-      )}
-
-      {dungeonLocked && <DungeonLock secondsLeft={dungeonSeconds} />}
-    </div>
-  )
-}
