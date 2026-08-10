@@ -1,6 +1,7 @@
 'use client'
 
 import { useMemo, useState, useEffect } from 'react'
+import { useRouter } from 'next/navigation'
 import type { GameMode } from '@/lib/ecard/game'
 import { generateRoomCode } from '@/lib/ecard/game'
 import { type DamnedRecord, formatCoin } from '@/lib/ecard/leaderboard'
@@ -68,6 +69,7 @@ export function Lobby({
   waitingRoomCode,
   onCancelPvpWaiting,
 }: LobbyProps) {
+  const router = useRouter()
   const [roomCode, setRoomCode] = useState('')
   const [joinCode, setJoinCode] = useState('')
   const [isPrivate, setIsPrivate] = useState(false)
@@ -117,8 +119,8 @@ export function Lobby({
       <div className="flicker w-full max-w-5xl flex flex-col gap-12">
         {/* Header Section */}
         <header className="text-center space-y-2">
-          <p className="font-sans text-xs uppercase tracking-[0.6em] text-[#9e2a2b] opacity-80">Sinh Tử Cục / Death Match</p>
-          <h1 className="font-display text-6xl font-black tracking-[0.2em] text-[#b3914a] md:text-8xl drop-shadow-[0_0_20px_rgba(179,145,74,0.3)]">
+          <p className="font-sans text-[11px] uppercase tracking-[0.65em] text-[#c96a6b] opacity-90">Sinh Tử Cục · Death Match</p>
+          <h1 className="font-display text-6xl font-black tracking-[0.22em] text-[#f2c96b] md:text-8xl drop-shadow-[0_0_24px_rgba(242,201,107,0.28)]">
             E&nbsp;·&nbsp;CARD
           </h1>
           <div className="h-[1px] w-32 bg-gradient-to-r from-transparent via-[#b3914a] to-transparent mx-auto mt-4" />
@@ -141,7 +143,7 @@ export function Lobby({
           
           {/* Left Column (Game Modes Panel) */}
           <section className="flex flex-col space-y-4">
-            <h2 className="font-display text-sm uppercase tracking-widest text-zinc-500 mb-2 px-1">Bảng Điều Khiển / Control Panel</h2>
+            <h2 className="font-display text-sm uppercase tracking-[0.24em] text-zinc-300 mb-2 px-1">Bảng Điều Khiển</h2>
             
             {/* Identity Input */}
             <div
@@ -152,14 +154,14 @@ export function Lobby({
               }}
             >
               <div className="flex items-center justify-between mb-2">
-                <span className="text-[10px] uppercase tracking-widest text-zinc-400">Định Danh / Identity</span>
+                <span className="text-[10px] uppercase tracking-[0.28em] text-zinc-300">Định Danh</span>
                 <button
                   type="button"
                   onClick={() => {
                     audio.click()
                     setShopOpen(true)
                   }}
-                  className="rounded border border-[#b3914a]/50 px-2 py-1 font-sans text-[10px] uppercase tracking-wider text-[#b3914a] hover:bg-[#b3914a]/10 transition-colors"
+                  className="rounded border border-[#b3914a]/60 bg-[#b3914a]/10 px-2 py-1 font-sans text-[10px] uppercase tracking-[0.24em] text-[#f6d27b] hover:bg-[#b3914a]/20 transition-colors"
                 >
                   Mã Định Danh / Shop
                 </button>
@@ -170,12 +172,14 @@ export function Lobby({
                 disabled={!nameUnlocked}
                 maxLength={24}
                 placeholder="Kẻ Vô Danh"
-                className="w-full bg-[#050505] border border-zinc-800 px-3 py-2 text-zinc-200 font-sans focus:border-[#b3914a]/50 outline-none transition-colors rounded-sm disabled:cursor-not-allowed disabled:opacity-60"
+                className="w-full bg-[#050505] border border-zinc-700 px-3 py-2 text-zinc-100 font-sans text-sm placeholder:text-zinc-500 focus:border-[#b3914a]/60 focus:outline-none transition-colors rounded-sm disabled:cursor-not-allowed disabled:opacity-60"
               />
-              <p className="mt-2 font-sans text-[10px] text-[#b3914a]/90">
+              <p className="mt-2 font-sans text-[11px] text-[#f1c66d]">
                 {title?.vi ?? 'Con Bạc'}
+                {profile.role === 'escaped' && <span className="ml-2 text-emerald-400">· KẺ THOÁT HIỂM</span>}
+                {profile.role === 'admin' && <span className="ml-2 text-red-400">· QUẢN TRỊ</span>}
                 {!nameUnlocked && (
-                  <span className="ml-2 text-zinc-500">
+                  <span className="ml-2 text-zinc-400">
                     · Đạt {formatCoin(50_000_000)} để mở khóa tên tùy chỉnh
                   </span>
                 )}
@@ -183,14 +187,24 @@ export function Lobby({
             </div>
 
             {/* START GAUNTLET Button */}
+            {profile.role === 'admin' && (
+              <button
+                type="button"
+                onClick={() => router.push('/admin')}
+                className="w-full rounded border border-red-900/40 bg-red-950/20 px-4 py-2 text-left text-[11px] uppercase tracking-[0.24em] text-red-300 transition-colors hover:border-red-700 hover:bg-red-950/30"
+              >
+                Admin Console
+              </button>
+            )}
+
             <button
               type="button"
               onClick={() => begin('AI')}
               className="group relative w-full overflow-hidden rounded border border-[#b3914a]/40 bg-gradient-to-br from-[#1a150e] to-[#0a0a0a] p-6 text-left transition-all hover:border-[#b3914a] hover:shadow-[0_0_20px_rgba(179,145,74,0.15)]"
             >
               <div className="relative z-10">
-                <span className="block font-display text-3xl font-black tracking-tighter text-[#b3914a]">START GAUNTLET</span>
-                <span className="mt-1 block font-sans text-xs uppercase tracking-widest text-zinc-500 group-hover:text-zinc-300 transition-colors">
+                <span className="block font-display text-3xl font-black tracking-[0.08em] text-[#f2c96b]">START GAUNTLET</span>
+                <span className="mt-1 block font-sans text-xs uppercase tracking-[0.24em] text-zinc-300 group-hover:text-zinc-100 transition-colors">
                   Đấu với AI Hyodo — Trực diện & Tàn khốc
                 </span>
               </div>
@@ -199,14 +213,14 @@ export function Lobby({
             {/* ONLINE PK ROOM Panel */}
             <div className="bg-[#0c0907] border border-[#9e2a2b]/30 p-6 rounded shadow-2xl space-y-5">
               <div className="flex items-center justify-between">
-                <span className="font-display text-xl font-bold tracking-wider text-[#9e2a2b]">ONLINE PK ROOM</span>
+                <span className="font-display text-xl font-bold tracking-[0.16em] text-[#d96f70]">ONLINE PK ROOM</span>
                 <div className="h-1.5 w-1.5 rounded-full bg-[#9e2a2b] animate-pulse" />
               </div>
 
               {/* SÀN ĐẤU CHUNG — shared public arena, locks the instant it fills */}
               <div className="space-y-2 rounded border border-[#b3914a]/25 bg-[#b3914a]/[0.04] p-3">
                 <div className="flex items-center justify-between">
-                  <p className="text-[10px] uppercase tracking-widest text-[#b3914a]">Sàn Đấu Chung / Public Arena</p>
+                  <p className="text-[10px] uppercase tracking-[0.24em] text-[#f1c66d]">Sàn Đấu Chung</p>
                   <span
                     className={`flex items-center gap-1.5 text-[9px] uppercase tracking-widest ${
                       !arenaServer
@@ -227,7 +241,7 @@ export function Lobby({
 
                 {!arenaServer && (
                   <>
-                    <p className="text-[10px] text-zinc-500">Ai cũng vào được — nhưng khi có người vào, sàn sẽ khóa ngay lập tức.</p>
+                    <p className="text-[11px] leading-5 text-zinc-300">Ai cũng vào được, nhưng khi có người vào, sàn sẽ khóa ngay lập tức.</p>
                     <button
                       type="button"
                       onClick={() => begin('PVP', { roomCode: ARENA_ROOM_ID, isPrivate: false, host: true, wager: roomWager })}
@@ -240,8 +254,8 @@ export function Lobby({
 
                 {arenaServer?.status === 'WAITING' && !arenaIsMine && (
                   <>
-                    <p className="text-[10px] text-zinc-500">
-                      <span className="text-zinc-300 font-bold">{arenaServer.hostName}</span> đang chờ đối thủ tại đây.
+                    <p className="text-[11px] leading-5 text-zinc-300">
+                      <span className="font-bold text-[#f1c66d]">{arenaServer.hostName}</span> đang chờ đối thủ tại đây.
                     </p>
                     <button
                       type="button"
@@ -254,7 +268,7 @@ export function Lobby({
                 )}
 
                 {arenaServer?.status === 'WAITING' && arenaIsMine && (
-                  <p className="text-[10px] text-amber-400/90 italic">Bạn đang mở sàn — chờ một kẻ thách đấu bước vào...</p>
+                  <p className="text-[11px] leading-5 text-[#f2c96b]">Bạn đang mở sàn — chờ một kẻ thách đấu bước vào...</p>
                 )}
 
                 {arenaServer?.status === 'INGAME' && (
@@ -273,9 +287,9 @@ export function Lobby({
               {/* Create Room */}
               <div className="space-y-3">
                 <div className="flex items-center justify-between">
-                  <p className="text-[10px] uppercase tracking-widest text-zinc-500">Tạo Phòng / Create</p>
+                  <p className="text-[10px] uppercase tracking-[0.24em] text-zinc-300">Tạo Phòng</p>
                   <label className="flex items-center gap-2 cursor-pointer group">
-                    <span className="text-[9px] uppercase tracking-tighter text-zinc-600 group-hover:text-zinc-400 transition-colors">Phòng Riêng Tư</span>
+                    <span className="text-[9px] uppercase tracking-[0.24em] text-zinc-300 group-hover:text-zinc-100 transition-colors">Phòng Riêng Tư</span>
                     <input 
                       type="checkbox" 
                       checked={isPrivate} 
@@ -298,7 +312,7 @@ export function Lobby({
                 </div>
                 <div>
                   <div className="flex items-center justify-between mb-1">
-                    <span className="text-[9px] uppercase tracking-widest text-zinc-500">Mức Cược / Stakes</span>
+                    <span className="text-[9px] uppercase tracking-[0.24em] text-zinc-300">Mức Cược</span>
                     <span className="text-[10px] font-mono text-[#b3914a]">{formatCoin(roomWager)}</span>
                   </div>
                   <input
@@ -324,12 +338,12 @@ export function Lobby({
 
               {/* Join Room */}
               <div className="space-y-3">
-                <p className="text-[10px] uppercase tracking-widest text-zinc-500">Tham Gia / Join</p>
+                <p className="text-[10px] uppercase tracking-[0.24em] text-zinc-300">Tham Gia</p>
                 <input
                   value={joinCode}
                   onChange={(e) => setJoinCode(e.target.value.toUpperCase().slice(0, 6))}
                   placeholder="MÃ PHÒNG"
-                  className="w-full bg-[#050505] border border-zinc-800 px-3 py-2 text-center font-display text-xl tracking-[0.4em] text-zinc-200 focus:border-[#9e2a2b]/50 outline-none transition-colors"
+                  className="w-full bg-[#050505] border border-zinc-700 px-3 py-2 text-center font-display text-xl tracking-[0.36em] text-zinc-100 focus:border-[#9e2a2b]/60 outline-none transition-colors"
                 />
                 <button
                   disabled={joinCode?.length < 6}
@@ -345,7 +359,7 @@ export function Lobby({
           {/* Right Column (Global Chat & Available Matches) */}
           <section className="flex flex-col space-y-6">
             <div className="flex flex-col">
-              <h2 className="font-display text-sm uppercase tracking-widest text-zinc-500 mb-2 px-1">Kênh Liên Lạc / Communication</h2>
+              <h2 className="font-display text-sm uppercase tracking-[0.24em] text-zinc-300 mb-2 px-1">Kênh Liên Lạc</h2>
               <GlobalChat 
                 playerName={cleanName} 
                 messages={worldChatMessages} 
@@ -359,7 +373,7 @@ export function Lobby({
 
             {/* BÀN CƯỢC ĐANG TRỐNG / AVAILABLE MATCHES */}
             <div className="flex flex-col">
-              <h2 className="font-display text-sm uppercase tracking-widest text-zinc-500 mb-2 px-1">BÀN CƯỢC ĐANG TRỐNG / AVAILABLE MATCHES</h2>
+              <h2 className="font-display text-sm uppercase tracking-[0.24em] text-zinc-300 mb-2 px-1">BÀN CƯỢC ĐANG TRỐNG</h2>
               <div
                 className="bg-[#0a0a0d] border border-zinc-800 rounded overflow-hidden ring-1 ring-inset ring-red-950/20"
                 style={{
@@ -370,7 +384,7 @@ export function Lobby({
                 <div className="max-h-[200px] overflow-y-auto thin-scroll">
                   <table className="w-full text-left border-collapse">
                     <thead className="sticky top-0 bg-[#121212] border-b border-zinc-800">
-                      <tr className="text-[9px] uppercase tracking-widest text-zinc-500">
+                      <tr className="text-[9px] uppercase tracking-[0.24em] text-zinc-300">
                         <th className="p-3">Host</th>
                         <th className="p-3">Wager</th>
                         <th className="p-3 text-right">Action</th>
@@ -380,16 +394,16 @@ export function Lobby({
                       {publicMatches.length > 0 ? (
                         publicMatches.map(s => (
                           <tr key={s.id} className="border-b border-zinc-900/50 hover:bg-zinc-900/30 transition-colors">
-                            <td className="p-3 text-xs text-zinc-300 font-bold">{s.hostName}</td>
-                            <td className="p-3 text-xs text-[#b3914a] font-mono">{formatCoin(s.wager)}</td>
+                            <td className="p-3 text-xs text-zinc-100 font-bold">{s.hostName}</td>
+                            <td className="p-3 text-xs text-[#f1c66d] font-mono">{formatCoin(s.wager)}</td>
                             <td className="p-3 text-right">
                               <button 
                                 onClick={() => begin('PVP', { roomCode: s.id, host: false })}
                                 disabled={s.bot}
-                                className={`px-3 py-1 text-[9px] uppercase font-black transition-all rounded-sm ${
+                                              className={`px-3 py-1 text-[9px] uppercase font-black tracking-[0.18em] transition-all rounded-sm ${
                                   s.bot 
-                                    ? 'bg-zinc-800 text-zinc-600 border border-zinc-700 cursor-not-allowed' 
-                                    : 'bg-[#9e2a2b]/20 border border-[#9e2a2b]/40 text-[#9e2a2b] hover:bg-[#9e2a2b] hover:text-white'
+                                    ? 'bg-zinc-800 text-zinc-500 border border-zinc-700 cursor-not-allowed' 
+                                    : 'bg-[#9e2a2b]/20 border border-[#9e2a2b]/40 text-[#f3b1b3] hover:bg-[#9e2a2b] hover:text-white'
                                 }`}
                               >
                                 {s.bot ? 'BÀN BOT / LOCKED' : 'VÀO NGAY / JOIN'}
@@ -399,7 +413,7 @@ export function Lobby({
                         ))
                       ) : (
                         <tr>
-                          <td colSpan={3} className="p-8 text-center text-[10px] uppercase tracking-widest text-zinc-600 italic">
+                          <td colSpan={3} className="p-8 text-center text-[10px] uppercase tracking-[0.24em] text-zinc-400 italic">
                             Chưa có bàn cược nào công khai...
                           </td>
                         </tr>
@@ -413,22 +427,22 @@ export function Lobby({
             {/* Quick Stats */}
             <div className="p-4 border border-zinc-900 bg-zinc-950/50 rounded flex justify-between items-center opacity-60">
               <div className="flex gap-4">
-                <div className="text-[10px] uppercase tracking-tighter">
-                  <span className="text-zinc-500">Players:</span> <span className="text-emerald-500">1,204</span>
+                <div className="text-[10px] uppercase tracking-[0.24em]">
+                  <span className="text-zinc-400">Players:</span> <span className="text-emerald-400">1,204</span>
                 </div>
-                <div className="text-[10px] uppercase tracking-tighter">
-                  <span className="text-zinc-500">Active:</span> <span className="text-[#b3914a]">82</span>
+                <div className="text-[10px] uppercase tracking-[0.24em]">
+                  <span className="text-zinc-400">Active:</span> <span className="text-[#f1c66d]">82</span>
                 </div>
               </div>
-              <div className="text-[9px] font-mono text-zinc-700">STABLE_BUILD_080626</div>
+              <div className="text-[9px] font-mono text-zinc-500">STABLE_BUILD_080626</div>
             </div>
           </section>
         </main>
 
         {/* BẢNG PHONG THẦN / HALL OF THE DAMNED — Leaderboard */}
         <section className="flex flex-col">
-          <h2 className="font-display text-sm uppercase tracking-widest text-zinc-500 mb-2 px-1">
-            Bảng Phong Thần / Hall of the Damned
+          <h2 className="font-display text-sm uppercase tracking-[0.24em] text-zinc-300 mb-2 px-1">
+            Bảng Phong Thần
           </h2>
           <div
             className="bg-[#0a0a0d] border border-zinc-800 rounded overflow-hidden ring-1 ring-inset ring-red-950/20"
@@ -440,7 +454,7 @@ export function Lobby({
             <div className="max-h-[280px] overflow-y-auto thin-scroll">
               <table className="w-full text-left border-collapse">
                 <thead className="sticky top-0 bg-[#121212] border-b border-zinc-800">
-                  <tr className="text-[9px] uppercase tracking-widest text-zinc-500">
+                  <tr className="text-[9px] uppercase tracking-[0.24em] text-zinc-300">
                     <th className="p-3 w-10">#</th>
                     <th className="p-3">Tên / Name</th>
                     <th className="p-3 text-right">Thắng / Wins</th>
@@ -459,22 +473,22 @@ export function Lobby({
                             isMe ? 'bg-[#9e2a2b]/10' : 'hover:bg-zinc-900/30'
                           }`}
                         >
-                          <td className="p-3 text-xs font-mono text-zinc-500">
+                          <td className="p-3 text-xs font-mono text-zinc-400">
                             {i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : i + 1}
                           </td>
-                          <td className="p-3 text-xs font-bold text-zinc-200">
+                          <td className="p-3 text-xs font-bold text-zinc-100">
                             {row.name}
                             {isMe && <span className="ml-1.5 text-[9px] text-[#9e2a2b]">(BẠN)</span>}
                           </td>
                           <td className="p-3 text-xs text-right text-emerald-400 font-mono">{row.wins ?? 0}</td>
-                          <td className="p-3 text-xs text-right text-[#9e2a2b] font-mono">{row.deaths ?? 0}</td>
-                          <td className="p-3 text-xs text-right text-[#b3914a] font-mono">{formatCoin(row.debt ?? 0)}</td>
+                          <td className="p-3 text-xs text-right text-[#f08d91] font-mono">{row.deaths ?? 0}</td>
+                          <td className="p-3 text-xs text-right text-[#f1c66d] font-mono">{formatCoin(row.debt ?? 0)}</td>
                         </tr>
                       )
                     })
                   ) : (
                     <tr>
-                      <td colSpan={5} className="p-8 text-center text-[10px] uppercase tracking-widest text-zinc-600 italic">
+                      <td colSpan={5} className="p-8 text-center text-[10px] uppercase tracking-[0.24em] text-zinc-400 italic">
                         Chưa có ai trong bảng phong thần...
                       </td>
                     </tr>
@@ -487,8 +501,8 @@ export function Lobby({
 
         {escapedLeaderboard.length > 0 && (
           <section className="flex flex-col">
-            <h2 className="font-display text-sm uppercase tracking-widest text-emerald-500 mb-2 px-1">
-              Hội Những Kẻ Thoát Hiểm / The Escaped Ones
+            <h2 className="font-display text-sm uppercase tracking-[0.24em] text-emerald-400 mb-2 px-1">
+              Hội Những Kẻ Thoát Hiểm
             </h2>
             <div
               className="bg-[#0a0a0d] border border-emerald-900/30 rounded overflow-hidden shadow-[0_0_20px_rgba(16,185,129,0.1)]"
@@ -506,9 +520,9 @@ export function Lobby({
                   <tbody>
                     {escapedLeaderboard.map((row, i) => (
                       <tr key={`${row.name}-${i}`} className="border-b border-zinc-900/50 hover:bg-emerald-900/5 transition-colors">
-                        <td className="p-3 text-xs font-mono text-emerald-600">{i + 1}</td>
+                        <td className="p-3 text-xs font-mono text-emerald-400">{i + 1}</td>
                         <td className="p-3 text-xs font-bold text-emerald-400">{row.name}</td>
-                        <td className="p-3 text-[9px] text-right uppercase tracking-tighter text-zinc-500">
+                        <td className="p-3 text-[9px] text-right uppercase tracking-[0.24em] text-zinc-300">
                           {row.role === 'admin' ? 'Quản Trị' : 'Đã Thoát'}
                         </td>
                         <td className="p-3 text-xs text-right text-emerald-400 font-mono">{row.wins ?? 0}</td>
@@ -521,7 +535,7 @@ export function Lobby({
           </section>
         )}
         <footer className="text-center opacity-30 hover:opacity-100 transition-opacity duration-700">
-          <p className="font-sans text-[10px] uppercase tracking-[0.3em] text-zinc-500">
+          <p className="font-sans text-[10px] uppercase tracking-[0.3em] text-zinc-400">
             The Citizen governs the Slave. Yet a single Slave can topple the Emperor.
           </p>
         </footer>
@@ -539,14 +553,14 @@ export function Lobby({
         <div role="dialog" aria-modal="true" className="fixed inset-0 z-[10000] flex items-center justify-center bg-black/85 backdrop-blur-sm p-4">
           <div className="w-full max-w-sm rounded-lg border border-[#b3914a]/40 bg-[#0a0a0d] p-6 text-center shadow-2xl">
             <div className="mx-auto mb-4 h-10 w-10 animate-spin rounded-full border-2 border-[#b3914a]/30 border-t-[#b3914a]" />
-            <h2 className="font-display text-xl font-black tracking-widest text-[#b3914a]">ĐANG CHỜ ĐỐI THỦ</h2>
-            <p className="mt-2 text-xs text-zinc-400">
-              Bàn <span className="text-[#b3914a] font-mono">{waitingRoomCode || '------'}</span> đang mở — trận đấu chỉ bắt đầu khi có một người chơi thật bước vào.
+            <h2 className="font-display text-xl font-black tracking-[0.2em] text-[#f2c96b]">ĐANG CHỜ ĐỐI THỦ</h2>
+            <p className="mt-2 text-sm leading-6 text-zinc-300">
+              Bàn <span className="font-mono text-[#f1c66d]">{waitingRoomCode || '------'}</span> đang mở — trận đấu chỉ bắt đầu khi có một người chơi thật bước vào.
             </p>
             <button
               type="button"
               onClick={onCancelPvpWaiting}
-              className="mt-5 w-full rounded border border-zinc-700 py-2 text-xs uppercase tracking-widest text-zinc-400 hover:border-[#9e2a2b] hover:text-[#9e2a2b] transition-colors"
+              className="mt-5 w-full rounded border border-zinc-700 py-2 text-xs uppercase tracking-[0.24em] text-zinc-300 hover:border-[#9e2a2b] hover:text-[#f3b1b3] transition-colors"
             >
               Hủy / Cancel
             </button>
