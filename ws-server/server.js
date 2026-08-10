@@ -6,6 +6,9 @@
 
 const { WebSocketServer } = require('ws')
 const http = require('http')
+const { applyRoomEvent } = require('./room-state')
+const fs = require('fs')
+const path = require('path')
 
 const PORT = process.env.PORT || 8080
 
@@ -20,6 +23,50 @@ const wss = new WebSocketServer({ server: httpServer })
 let clientCount = 0
 // Server-side room directory to ensure all new clients get the current state
 const activeRooms = new Map()
+// Server-side temporary locks for AI matches: Map<clientId, untilTimestampMs>
+const aiLocks = new Map()
+const LOCK_FILE = path.join(__dirname, 'ai-locks.json')
+
+function loadLocksFromDisk() {
+  try {
+    if (!fs.existsSync(LOCK_FILE)) return
+    const raw = fs.readFileSync(LOCK_FILE, 'utf8')
+    const obj = JSON.parse(raw || '{}')
+    const now = Date.now()
+    for (const [k, v] of Object.entries(obj)) {
+      const until = Number(v) || 0
+      if (until > now) aiLocks.set(k, until)
+    }
+  } catch (err) {
+    console.warn('[hub] failed to load ai locks from disk:', err.message)
+  }
+}
+
+function saveLocksToDisk() {
+  try {
+    const obj = {}
+    for (const [k, v] of aiLocks.entries()) obj[k] = v
+    fs.writeFileSync(LOCK_FILE, JSON.stringify(obj), { encoding: 'utf8' })
+  } catch (err) {
+    console.warn('[hub] failed to save ai locks to disk:', err.message)
+  }
+}
+
+// Load persisted locks at startup
+loadLocksFromDisk()
+
+// Periodic cleanup of expired locks (and persist after cleanup)
+const lockCleanup = setInterval(() => {
+  const now = Date.now()
+  let changed = false
+  for (const [k, until] of aiLocks.entries()) {
+    if (until <= now) {
+      aiLocks.delete(k)
+      changed = true
+    }
+  }
+  if (changed) saveLocksToDisk()
+}, 5000)
 
 wss.on('connection', (ws) => {
   clientCount += 1
@@ -52,6 +99,42 @@ wss.on('connection', (ws) => {
       return
     }
 
+    // Server-side AI match locking: handle requests and loss notifications
+    if (parsed.type === 'AI_MATCH_REQUEST') {
+      // Expect clientId in payload (emitted by client-side engine)
+      const clientId = parsed.payload && parsed.payload.clientId
+      const fp = parsed.payload && parsed.payload.fingerprint
+      const key = clientId || fp || null
+      const now = Date.now()
+      if (key && aiLocks.has(key) && aiLocks.get(key) > now) {
+        const remaining = aiLocks.get(key) - now
+        // Reply only to requester with rejection
+        try {
+          ws.send(JSON.stringify({ type: 'AI_MATCH_REJECTED', payload: { remainingMs: remaining } }))
+        } catch (err) {}
+        return
+      }
+      // Otherwise approve
+      try {
+        ws.send(JSON.stringify({ type: 'AI_MATCH_APPROVED', payload: {} }))
+      } catch (err) {}
+      return
+    }
+
+    if (parsed.type === 'AI_MATCH_LOSS') {
+      const clientId = parsed.payload && parsed.payload.clientId
+      const fp = parsed.payload && parsed.payload.fingerprint
+      const key = clientId || fp || null
+      if (key) {
+        const until = Date.now() + 30_000 // 30 seconds
+        aiLocks.set(key, until)
+        // persist immediately
+        saveLocksToDisk()
+      }
+      // Do not rebroadcast loss notifications
+      return
+    }
+
     // Application-level heartbeat: answered directly to the sender only
     if (parsed.type === 'PING') {
       if (ws.readyState === ws.OPEN) {
@@ -61,26 +144,13 @@ wss.on('connection', (ws) => {
     }
 
     // Room Lifecycle Management on Server
-    if (parsed.type === 'ROOM_CREATED') {
-      activeRooms.set(parsed.payload.roomCode, {
-        ...parsed.payload,
-        id: parsed.payload.roomCode,
-        status: 'WAITING',
-        createdAt: Date.now()
-      })
-    } else if (parsed.type === 'ROOM_DESTROYED') {
-      activeRooms.delete(parsed.payload.roomCode)
-    } else if (parsed.type === 'ROOM_STARTED') {
-      const room = activeRooms.get(parsed.payload.roomCode)
-      if (room) {
-        room.status = 'INGAME'
-      }
-    }
+    applyRoomEvent(activeRooms, parsed)
 
-    // Re-broadcast to every other connected client
+    // Re-broadcast to every connected client so room lifecycle messages are
+    // visible to the sender as well as other peers.
     const outgoing = JSON.stringify(parsed)
     wss.clients.forEach((client) => {
-      if (client !== ws && client.readyState === client.OPEN) {
+      if (client.readyState === client.OPEN) {
         client.send(outgoing)
       }
     })
