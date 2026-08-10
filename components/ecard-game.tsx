@@ -459,14 +459,7 @@ export function EcardGame() {
   // ---- fx / overlays ----
   const [bubbles, setBubbles] = useState<SpeechBubble[]>([])
   const [messages, setMessages] = useState<ChatMessage[]>([])
-  const [globalChatMessages, setGlobalChatMessages] = useState<Array<{
-    id: string
-    name: string
-    text: string
-    color: string
-    timestamp: number
-    self?: boolean
-  }>>([])
+  const [globalChatMessages, setGlobalChatMessages] = useState<GlobalChatMessage[]>([])
   const [inputActive, setInputActive] = useState(false)
   const [executing, setExecuting] = useState(false)
   const [split, setSplit] = useState(false)
@@ -565,8 +558,7 @@ export function EcardGame() {
   }, [])
 
   // Ask global hub for AI match approval (server-enforced lock)
-  const requestAiApproval = useCallback((): Promise<{ allowed: boolean; remainingMs?: number }>
-    => {
+    const requestAiApproval = useCallback((): Promise<{ allowed: boolean; remainingMs?: number }> => {
     return new Promise((resolve) => {
       const engine = wsRef.current
       if (!engine || !engine.getConnectionStatus()) return resolve({ allowed: true })
