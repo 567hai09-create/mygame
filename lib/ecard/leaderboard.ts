@@ -14,6 +14,7 @@ export interface DamnedRecord {
 
 const KEY = 'ecard.hall-of-the-damned.v1'
 const LOCK_KEY = 'ecard.dungeon-lock.v1'
+const COOL_DOWN_MS = 60_000
 
 const SEED: DamnedRecord[] = [
   { name: 'Kaiji Itō', debt: 10_000_000_000, wins: 45, deaths: 73, isBot: true },
@@ -145,11 +146,11 @@ export interface DungeonLockState {
 export function loadDungeonLock(): DungeonLockState | null {
   if (typeof window === 'undefined') return null
   try {
-    const raw = window.localStorage.getItem(LOCK_KEY)
+    const raw = window.sessionStorage.getItem(LOCK_KEY)
     if (!raw) return null
     const parsed = JSON.parse(raw) as DungeonLockState
     if (parsed?.locked && (parsed?.until ?? 0) > Date.now()) return parsed
-    window.localStorage.removeItem(LOCK_KEY)
+    window.sessionStorage.removeItem(LOCK_KEY)
     return null
   } catch {
     return null
@@ -159,7 +160,7 @@ export function loadDungeonLock(): DungeonLockState | null {
 export function saveDungeonLock(untilMs: number) {
   if (typeof window === 'undefined') return
   try {
-    window.localStorage.setItem(LOCK_KEY, JSON.stringify({ locked: true, until: untilMs }))
+    window.sessionStorage.setItem(LOCK_KEY, JSON.stringify({ locked: true, until: untilMs }))
   } catch {
     /* ignore */
   }
@@ -168,8 +169,12 @@ export function saveDungeonLock(untilMs: number) {
 export function clearDungeonLock() {
   if (typeof window === 'undefined') return
   try {
-    window.localStorage.removeItem(LOCK_KEY)
+    window.sessionStorage.removeItem(LOCK_KEY)
   } catch {
     /* ignore */
   }
+}
+
+export function getDungeonCooldownMs() {
+  return COOL_DOWN_MS
 }
